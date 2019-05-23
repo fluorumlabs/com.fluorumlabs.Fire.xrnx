@@ -1,3 +1,16 @@
+-- set up include-path
+_clibroot = 'cLib/classes/'
+_xlibroot = 'xLib/classes/'
+
+_trace_filters = nil
+
+-- require some classes
+require (_clibroot..'cDebug')
+require (_xlibroot..'xLib')
+require (_xlibroot..'xPatternSequencer')
+
+rns = nil
+
 local PAD_ROWS = 4
 local PAD_COLUMNS = 16
 local PADS = table.create()
@@ -34,6 +47,7 @@ local CURRENT_TRACK = -1
 local CURRENT_NOTE_COLUMN = -1
 local PLAYBACK_LINE = -1
 local PLAYBACK_SEQUENCE = -1
+local PLAYBACK_NEXT_SEQUENCE = -1
 
 local CURRENT_ROW = 1
 
@@ -92,7 +106,13 @@ function initialize()
         end
     end
 
+    renoise.tool().app_new_document_observable:add_notifier(function()
+        rns = renoise.song()
+    end)
+    rns = renoise.song()
+
     attach_notifier(nil)
+    
     if not ( renoise.song().selected_pattern_observable:has_notifier(attach_notifier) ) then
         renoise.song().selected_pattern_observable:add_notifier(attach_notifier)
     end
@@ -162,6 +182,9 @@ function idler(notification)
     elseif PLAYBACK_LINE ~= new_playback_line or PLAYBACK_SEQUENCE ~= new_playback_sequence then
         PLAYBACK_LINE = new_playback_line
         PLAYBACK_SEQUENCE = new_playback_sequence
+        if PLAYBACK_NEXT_SEQUENCE == PLAYBACK_SEQUENCE then
+            PLAYBACK_NEXT_SEQUENCE = -1
+        end
         if MODE == MODE_DRUM or MODE == MODE_NOTE then
             render_note_cursor(renoise.song())
         elseif MODE == MODE_PERFORM then
@@ -228,6 +251,18 @@ end
 
 function render_perform()
     for i = PERFORM_SEQUENCE_VIEW_POS, PERFORM_SEQUENCE_VIEW_POS+PAD_ROWS-1 do
+        if i == CURRENT_SEQUENCE then
+            ROW_SELECT[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,255,0}
+        else
+            ROW_SELECT[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,0,0}
+        end
+        if i == PLAYBACK_SEQUENCE then
+            ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,255,0}
+        elseif i == PLAYBACK_NEXT_SEQUENCE then
+            ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {255,0,0}
+        else
+            ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,0,0}
+        end
         for j = PERFORM_TRACK_VIEW_POS, PERFORM_TRACK_VIEW_POS+PAD_COLUMNS-1 do
             if i >= 1 and i <= #renoise.song().sequencer.pattern_sequence and j >= 1 and j <= renoise.song().sequencer_track_count then
                 local cell = renoise.song():pattern(renoise.song().sequencer:pattern(i)):track(j)
@@ -237,33 +272,33 @@ function render_perform()
                 --    cell = renoise.song():pattern(cell.alias_pattern_index):track(j)
                 --end
                 if cell.color ~= nil then
-                    PADS[i][j] = rgb_to_hsv(cell.color)
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1] = rgb_to_hsv(cell.color)
                 else
-                    PADS[i][j] = rgb_to_hsv(renoise.song():track(j).color)
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1] = rgb_to_hsv(renoise.song():track(j).color)
                 end
-                PADS[i][j][2] = 1.0
+                PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][2] = 1.0
                 if cell.is_empty then
-                    PADS[i][j][1] = 0
-                    PADS[i][j][2] = 0
-                    PADS[i][j][3] = 0.01
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][1] = 0
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][2] = 0
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = 0.01
                 elseif renoise.song().sequencer:track_sequence_slot_is_muted(j,i) then
-                    PADS[i][j][3] = 0.2
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = 0.2
                 else
-                    PADS[i][j][3] = 0.8
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = 0.8
                     --if not is_alias then
                     --    PADS[i][j][3] = PADS[i][j][3] * 2
                     --end
                 end
                 if i == CURRENT_SEQUENCE and j == CURRENT_TRACK then
-                    if PADS[i][j][1] ~= 0 or PADS[i][j][2] ~= 0 then
-                        PADS[i][j][2] = 0.5
+                    if PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][1] ~= 0 or PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][2] ~= 0 then
+                        PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][2] = 0.5
                     end
-                    PADS[i][j][3] = PADS[i][j][3] + 0.2
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] + 0.2
                 end
-                PADS[i][j][4] = i == PLAYBACK_SEQUENCE
+                PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][4] = i == PLAYBACK_SEQUENCE
             else
-                PADS[i][j] = {0,0,0.01,false}
-                PADS[i][j][4] = i == PLAYBACK_SEQUENCE
+                PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1] = {0,0,0.01,false}
+                PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][4] = i == PLAYBACK_SEQUENCE
             end
         end 
     end
@@ -709,7 +744,7 @@ function ui_pad_press(row, column)
         local rns = renoise.song()
         local seq_ix = PERFORM_SEQUENCE_VIEW_POS + row - 1
         local track_ix = PERFORM_TRACK_VIEW_POS + column - 1
-        if seq_ix >= 1 and seq_ix <= #renoise.song().sequencer.pattern_sequence and track_ix >= 1 and track_ix < renoise.song().sequencer_track_count then
+        if seq_ix >= 1 and seq_ix <= #renoise.song().sequencer.pattern_sequence and track_ix >= 1 and track_ix <= renoise.song().sequencer_track_count then
             if (not UI_SELECT_PRESSED and UI_ALT_PRESSED) or UI_PAD_PRESSED_COUNT>=1 then
                 local source = renoise.song():pattern(renoise.song().sequencer:pattern(rns.selected_sequence_index)):track(rns.selected_track_index)
                 local target = renoise.song():pattern(renoise.song().sequencer:pattern(seq_ix)):track(track_ix)
@@ -937,7 +972,14 @@ end
 
 function ui_grid_next()
     local line_count = renoise.song().selected_pattern.number_of_lines
-    if MODE == MODE_NOTE or MODE == MODE_DRUM then
+    local track_count = rns.sequencer_track_count
+    if MODE == MODE_PERFORM then
+        if PERFORM_TRACK_VIEW_POS + PAD_COLUMNS <= track_count then
+            PERFORM_TRACK_VIEW_POS = PERFORM_TRACK_VIEW_POS + 1
+            ui_update_nav_buttons()
+            mark_as_dirty()
+        end
+    elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
         local is_not_last = NOTE_STEP_VIEW_POS + PAD_COLUMNS < renoise.song().selected_pattern.number_of_lines
         local selection = get_selection()
         local is_whole_track_selected = selection.start_line == 1 and selection.end_line == line_count
@@ -994,7 +1036,13 @@ end
 
 function ui_grid_prev()
     local line_count = renoise.song().selected_pattern.number_of_lines
-    if MODE == MODE_NOTE or MODE == MODE_DRUM then
+    if MODE == MODE_PERFORM then
+        if PERFORM_TRACK_VIEW_POS > 1 then
+            PERFORM_TRACK_VIEW_POS = PERFORM_TRACK_VIEW_POS - 1
+            ui_update_nav_buttons()
+            mark_as_dirty()
+        end
+    elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
         local is_not_first = NOTE_STEP_VIEW_POS > PAD_COLUMNS
         local selection = get_selection()
         local is_whole_track_selected = selection.start_line == 1 and selection.end_line == line_count
@@ -1068,15 +1116,21 @@ function ui_grid_prev()
 end
 
 function ui_pattern_next()
-    if UI_SHIFT_PRESSED then
-        local seq_pos = renoise.song().selected_sequence_index
-        local seq_len = renoise.song().transport.song_length.sequence
-        if seq_pos < seq_len then
-            renoise.song().selected_sequence_index = seq_pos+1
+    local seq_len = renoise.song().transport.song_length.sequence
+    if MODE == MODE_PERFORM then
+        if PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS <= seq_len then
+            PERFORM_SEQUENCE_VIEW_POS = PERFORM_SEQUENCE_VIEW_POS + 1
             ui_update_nav_buttons()
+            mark_as_dirty()
         end
-    else
-        if MODE == MODE_NOTE or MODE == MODE_DRUM then
+    elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
+        if UI_SHIFT_PRESSED then
+            local seq_pos = renoise.song().selected_sequence_index
+            if seq_pos < seq_len then
+                renoise.song().selected_sequence_index = seq_pos+1
+                ui_update_nav_buttons()
+            end
+        else
             if NOTE_COLUMN_VIEW_POS < #FLAT_ROWS - PAD_ROWS + 1 then
                 NOTE_COLUMN_VIEW_POS = NOTE_COLUMN_VIEW_POS + 1
                 ui_update_nav_buttons()
@@ -1087,15 +1141,21 @@ function ui_pattern_next()
 end
 
 function ui_pattern_prev()
-    if UI_SHIFT_PRESSED then
-        local seq_pos = renoise.song().selected_sequence_index
-        local seq_len = renoise.song().transport.song_length.sequence
-        if seq_pos > 1 then
-            renoise.song().selected_sequence_index = seq_pos-1
+    if MODE == MODE_PERFORM then
+        if PERFORM_SEQUENCE_VIEW_POS > 1 then
+            PERFORM_SEQUENCE_VIEW_POS = PERFORM_SEQUENCE_VIEW_POS - 1
             ui_update_nav_buttons()
+            mark_as_dirty()
         end
-    else
-        if MODE == MODE_NOTE or MODE == MODE_DRUM then
+    elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
+        if UI_SHIFT_PRESSED then
+            local seq_pos = renoise.song().selected_sequence_index
+            local seq_len = renoise.song().transport.song_length.sequence
+            if seq_pos > 1 then
+                renoise.song().selected_sequence_index = seq_pos-1
+                ui_update_nav_buttons()
+            end
+        else
             if NOTE_COLUMN_VIEW_POS > 1 then
                 NOTE_COLUMN_VIEW_POS = NOTE_COLUMN_VIEW_POS - 1
                 ui_update_nav_buttons()
@@ -1106,7 +1166,13 @@ function ui_pattern_prev()
 end
 
 function ui_select_prev()
-    if MODE == MODE_NOTE or MODE == MODE_DRUM then
+    if MODE == MODE_PERFORM then
+        if PERFORM_SEQUENCE_VIEW_POS > 1 then
+            PERFORM_SEQUENCE_VIEW_POS = PERFORM_SEQUENCE_VIEW_POS - 1
+            ui_update_nav_buttons()
+            mark_as_dirty()
+        end
+    elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
         if UI_STEP_PRESSED then
             UI_STEP_PROCESSED = true
             if renoise.song().transport.edit_step > 0 then
@@ -1131,7 +1197,14 @@ function ui_select_prev()
 end
 
 function ui_select_next()
-    if MODE == MODE_NOTE or MODE == MODE_DRUM then
+    local seq_len = renoise.song().transport.song_length.sequence
+    if MODE == MODE_PERFORM then
+        if PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS <= seq_len then
+            PERFORM_SEQUENCE_VIEW_POS = PERFORM_SEQUENCE_VIEW_POS + 1
+            ui_update_nav_buttons()
+            mark_as_dirty()
+        end
+    elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
         if UI_STEP_PRESSED then
             UI_STEP_PROCESSED = true
             if renoise.song().transport.edit_step < 64 then
@@ -1161,20 +1234,34 @@ function ui_row_select(index)
         if seq_ix >= 1 and seq_ix <= #renoise.song().sequencer.pattern_sequence then
             if not UI_SHIFT_PRESSED and not UI_ALT_PRESSED and not UI_STEP_PRESSED then
                 renoise.song().transport:set_scheduled_sequence(seq_ix)
+                PLAYBACK_NEXT_SEQUENCE = seq_ix
                 mark_as_dirty()
             elseif not UI_SHIFT_PRESSED and not UI_ALT_PRESSED and UI_STEP_PRESSED then
-                renoise.song().transport.playback_pos.sequence = seq_ix
+                local songpos = rns.transport.playback_pos
+                songpos.sequence = seq_ix
+                xPatternSequencer.switch_to_sequence(songpos)
                 mark_as_dirty()
             elseif UI_SHIFT_PRESSED and not UI_ALT_PRESSED and not UI_STEP_PRESSED then
+                if seq_ix < PLAYBACK_NEXT_SEQUENCE then 
+                    PLAYBACK_NEXT_SEQUENCE = PLAYBACK_NEXT_SEQUENCE + 1
+                end
                 renoise.song().sequencer:insert_new_pattern_at(seq_ix+1)
                 mark_as_dirty()
             elseif not UI_SHIFT_PRESSED and UI_ALT_PRESSED and not UI_STEP_PRESSED then
+                if seq_ix < PLAYBACK_NEXT_SEQUENCE then 
+                    PLAYBACK_NEXT_SEQUENCE = PLAYBACK_NEXT_SEQUENCE + 1
+                end
                 local source = renoise.song():pattern(renoise.song().sequencer:pattern(seq_ix))
                 renoise.song().sequencer:insert_new_pattern_at(seq_ix+1)
                 local target = renoise.song():pattern(renoise.song().sequencer:pattern(seq_ix+1))
                 target:copy_from(source)
                 mark_as_dirty()
             elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED and not UI_STEP_PRESSED then
+                if seq_ix == PLAYBACK_NEXT_SEQUENCE then 
+                    PLAYBACK_NEXT_SEQUENCE = -1
+                elseif seq_ix < PLAYBACK_NEXT_SEQUENCE then
+                    PLAYBACK_NEXT_SEQUENCE = PLAYBACK_NEXT_SEQUENCE - 1
+                end
                 if #renoise.song().sequencer.pattern_sequence > 1 then
                     renoise.song().sequencer:delete_sequence_at(seq_ix)
                     mark_as_dirty()
@@ -1276,14 +1363,35 @@ function ui_update_nav_buttons()
         UI_PERFORM_DEBUG.color = {255,255,0}
     end
 
-    if MODE == MODE_NOTE or MODE == MODE_DRUM then
+    if MODE == MODE_PERFORM then
+        if PERFORM_TRACK_VIEW_POS > 1 then
+            UI_GRID_PREV_DEBUG.color = {255, 0, 0}
+        else
+            UI_GRID_PREV_DEBUG.color = {0, 0, 0}
+        end
+        if PERFORM_TRACK_VIEW_POS + PAD_COLUMNS <= rns.sequencer_track_count then
+            UI_GRID_NEXT_DEBUG.color = {255, 0, 0}
+        else
+            UI_GRID_NEXT_DEBUG.color = {0, 0, 0}
+        end
+        if PERFORM_SEQUENCE_VIEW_POS > 1 then
+            UI_PATTERN_PREV_DEBUG.color = {255, 0, 0}
+        else
+            UI_PATTERN_PREV_DEBUG.color = {0, 0, 0}
+        end
+        if PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS <= seq_len then
+            UI_PATTERN_NEXT_DEBUG.color = {255, 0, 0}
+        else
+            UI_PATTERN_NEXT_DEBUG.color = {0, 0, 0}
+        end
+    elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
         if NOTE_STEP_VIEW_POS > 1 then
             UI_GRID_PREV_DEBUG.color = {255, 0, 0}
         else
             UI_GRID_PREV_DEBUG.color = {0, 0, 0}
         end
 
-        if NOTE_STEP_VIEW_POS + PAD_COLUMNS < renoise.song().selected_pattern.number_of_lines then
+        if NOTE_STEP_VIEW_POS + PAD_COLUMNS <= renoise.song().selected_pattern.number_of_lines then
             UI_GRID_NEXT_DEBUG.color = {255, 0, 0}
         else
             UI_GRID_NEXT_DEBUG.color = {0, 0, 0}
