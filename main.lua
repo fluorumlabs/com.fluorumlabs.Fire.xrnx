@@ -11,6 +11,9 @@ require (_xlibroot..'xPatternSequencer')
 
 rns = nil
 
+local MIDI_IN
+local MIDI_OUT
+
 local PAD_ROWS = 4
 local PAD_COLUMNS = 16
 local PADS = table.create()
@@ -46,13 +49,20 @@ local CURRENT_SEQUENCE = -1
 local CURRENT_TRACK = -1
 local CURRENT_NOTE_COLUMN = -1
 local PLAYBACK_LINE = -1
+local PLAYBACK_BEAT = -1
 local PLAYBACK_SEQUENCE = -1
 local PLAYBACK_NEXT_SEQUENCE = -1
 
 local CURRENT_ROW = 1
 
 local UI_MODE = 1
+local UI_MODE_PRESSED = false
 local UI_MODE_DEBUG
+
+local UI_KNOB1_DEBUG
+local UI_KNOB2_DEBUG
+local UI_KNOB3_DEBUG
+local UI_KNOB4_DEBUG
 
 local UI_PAD_PRESSED_COUNT = 0
 
@@ -90,6 +100,14 @@ local UI_REC_DEBUG
 
 local QUEUE_RENDER = false
 
+local COLOR_OFF = {0,0,0}
+local COLOR_RED_LOW = {127,0,0}
+local COLOR_RED = {255,0,0}
+local COLOR_GREEN_LOW = {0,127,0}
+local COLOR_GREEN = {0,255,0}
+local COLOR_YELLOW_LOW = {127,127,0}
+local COLOR_YELLOW = {255,255,0}
+
 function initialize() 
     build_debug_interface()
 
@@ -111,6 +129,8 @@ function initialize()
     end)
     rns = renoise.song()
 
+    midi_init()
+
     attach_notifier(nil)
     
     if not ( renoise.song().selected_pattern_observable:has_notifier(attach_notifier) ) then
@@ -127,6 +147,15 @@ function initialize()
     end
     if not (renoise.tool().app_release_document_observable:has_notifier(mark_as_dirty)) then
         renoise.tool().app_release_document_observable:add_notifier(mark_as_dirty)
+    end
+    if not (rns.transport.playing_observable:has_notifier(ui_update_transport_buttons)) then
+        rns.transport.playing_observable:add_notifier(ui_update_transport_buttons)
+    end
+    if not (rns.transport.loop_pattern_observable:has_notifier(ui_update_transport_buttons)) then
+        rns.transport.loop_pattern_observable:add_notifier(ui_update_transport_buttons)
+    end
+    if not (rns.transport.edit_mode_observable:has_notifier(ui_update_transport_buttons)) then
+        rns.transport.edit_mode_observable:add_notifier(ui_update_transport_buttons)
     end
 
     idler()    
@@ -156,6 +185,7 @@ function idler(notification)
     local new_note_column_index = renoise.song().selected_note_column_index
     local new_playback_line = renoise.song().transport.playback_pos.line
     local new_playback_sequence = renoise.song().transport.playback_pos.sequence
+    local new_playback_beat = renoise.song().transport.playback_pos_beats
     if CURRENT_TRACK ~= new_track_index and new_note_column_index > 0 then
         CURRENT_TRACK = new_track_index
         QUEUE_RENDER = true
@@ -173,15 +203,21 @@ function idler(notification)
         CURRENT_NOTE_COLUMN = new_note_column_index
         QUEUE_RENDER = true
     end
+
+    if UI_MODE ~= PLAYBACK_BEAT then
+        UI_MODE = PLAYBACK_BEAT
+        midi_mode(UI_MODE, true)
+        UI_MODE_DEBUG.text = 'MODE:'..math.floor(UI_MODE % 16)
+    end
+
     if QUEUE_RENDER then
-        PLAYBACK_LINE = new_playback_line
-        PLAYBACK_SEQUENCE = new_playback_sequence
         QUEUE_RENDER = false
         render()
         render_debug()
     elseif PLAYBACK_LINE ~= new_playback_line or PLAYBACK_SEQUENCE ~= new_playback_sequence then
         PLAYBACK_LINE = new_playback_line
         PLAYBACK_SEQUENCE = new_playback_sequence
+        PLAYBACK_BEAT = new_playback_beat
         if PLAYBACK_NEXT_SEQUENCE == PLAYBACK_SEQUENCE then
             PLAYBACK_NEXT_SEQUENCE = -1
         end
@@ -211,13 +247,17 @@ function render_debug()
     for r = 1, PAD_ROWS do
         if ROW_SELECT[r][1] ~= ROW_SELECT_2ND[r][1] or ROW_SELECT[r][2] ~= ROW_SELECT_2ND[r][2] or ROW_SELECT[r][3] ~= ROW_SELECT_2ND[r][3] then
             ROW_SELECT_2ND[r] = table.copy(ROW_SELECT[r])
+            midi_row(r, ROW_SELECT_2ND[r])
             ROW_SELECT_DEBUG[r].color = ROW_SELECT_2ND[r]
         end
 
         if ROW_INDICATOR[r][1] ~= ROW_INDICATOR_2ND[r][1] or ROW_INDICATOR[r][2] ~= ROW_INDICATOR_2ND[r][2] or ROW_INDICATOR[r][3] ~= ROW_INDICATOR_2ND[r][3] then
             ROW_INDICATOR_2ND[r] = table.copy(ROW_INDICATOR[r])
+            midi_indicator(r,ROW_INDICATOR_2ND[r])
             ROW_INDICATOR_DEBUG[r].color = ROW_INDICATOR_2ND[r]
         end
+
+        local sysex = midi_pad_start()
 
         for c = 1, PAD_COLUMNS do
             if PADS[r][c][1] ~= PADS_2ND[r][c][1] or PADS[r][c][2] ~= PADS_2ND[r][c][2] or PADS[r][c][3] ~= PADS_2ND[r][c][3] or PADS[r][c][4] ~= PADS_2ND[r][c][4] then
@@ -225,19 +265,22 @@ function render_debug()
                 local hsv = table.copy(PADS[r][c])
                 if hsv[2] == 0 and hsv[3] == 0 then
                     hsv[1] = 0
-                    hsv[3] = 0.01
+                    hsv[3] = 0
                     if hsv[4] then
                         hsv[3] = 0.1
                     end
                 else
                     if hsv[4] then
-                        hsv[3] = hsv[3]+0.2
+                        hsv[3] = hsv[3]+0.1
                         hsv[3] = math.min(hsv[3], 1.0)
                     end
                 end
                 PADS_DEBUG[r][c].color = hsv_to_rgb(hsv)
+                midi_pad(sysex, r, c, hsv_to_rgb(hsv))
             end
         end
+
+        midi_pad_end(sysex)
     end
 end
 
@@ -257,9 +300,9 @@ function render_perform()
             ROW_SELECT[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,0,0}
         end
         if i == PLAYBACK_SEQUENCE then
-            ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,255,0}
-        elseif i == PLAYBACK_NEXT_SEQUENCE then
             ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {255,0,0}
+        elseif i == PLAYBACK_NEXT_SEQUENCE then
+            ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,255,0}
         else
             ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,0,0}
         end
@@ -280,11 +323,11 @@ function render_perform()
                 if cell.is_empty then
                     PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][1] = 0
                     PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][2] = 0
-                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = 0.01
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = 0
                 elseif renoise.song().sequencer:track_sequence_slot_is_muted(j,i) then
-                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = 0.2
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = 0.05
                 else
-                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = 0.8
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = 0.9
                     --if not is_alias then
                     --    PADS[i][j][3] = PADS[i][j][3] * 2
                     --end
@@ -293,12 +336,10 @@ function render_perform()
                     if PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][1] ~= 0 or PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][2] ~= 0 then
                         PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][2] = 0.5
                     end
-                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] + 0.2
+                    PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] = PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][3] + 0.05
                 end
-                PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][4] = i == PLAYBACK_SEQUENCE
             else
-                PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1] = {0,0,0.01,false}
-                PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1][4] = i == PLAYBACK_SEQUENCE
+                PADS[i-PERFORM_SEQUENCE_VIEW_POS+1][j-PERFORM_TRACK_VIEW_POS+1] = {0,0,0,false}
             end
         end 
     end
@@ -344,23 +385,15 @@ function render_note_cursor(rns)
             ROW_SELECT[i] = { 0, 0, 0 }
         end
 
-        local playback_pattern_index = renoise.song().sequencer:pattern(renoise.song().transport.playback_pos.sequence)
-        local playback_track = renoise.song():pattern(playback_pattern_index):track(rows[NOTE_COLUMN_VIEW_POS+i-1].track_index)
+        --local playback_pattern_index = renoise.song().sequencer:pattern(renoise.song().transport.playback_pos.sequence)
+        --local playback_track = renoise.song():pattern(playback_pattern_index):track(rows[NOTE_COLUMN_VIEW_POS+i-1].track_index)
         --local is_alias = false
         --if playback_track.is_alias then
         --    is_alias = true
         --    playback_pattern_index = playback_track.alias_pattern_index
         --end
 
-        if playback_pattern_index == renoise.song().selected_pattern_index then
-            if rns.sequencer:track_sequence_slot_is_muted(rows[NOTE_COLUMN_VIEW_POS+i-1].track_index,renoise.song().selected_sequence_index) then
-                ROW_INDICATOR[i] = { 255, 0, 0 }
-            else
-                ROW_INDICATOR[i] = { 0, 255, 0 }
-            end
-        else
-            ROW_INDICATOR[i] = { 0, 0, 0 }
-        end
+        ROW_INDICATOR[i] = { 0, 0, 0 }
 
         if NOTE_CURSOR_POS > 0 then
             PADS[i][NOTE_CURSOR_POS][4] = false
@@ -469,19 +502,19 @@ function render_note_row(rns, ix, row, last_note)
                 pad[2] = 0.0
                 pad[3] = 0.0
                 if is_selected and is_selected_line(i, selection) then
-                    pad[3] = pad[3] + 0.3
+                    pad[3] = pad[3] + 0.05
                 end
             else
                 pad[1] = last_note/12.0
                 pad[2] = 1.0
                 if note_value < 120 then
-                    pad[3] = 0.8
+                    pad[3] = 0.9
                 else
-                    pad[3] = 0.3
+                    pad[3] = 0.1
                 end
                 if is_selected and is_selected_line(i, selection) then
                     pad[2] = 0.5
-                    pad[3] = pad[3] + 0.2
+                    pad[3] = pad[3] + 0.05
                 end
             end
         else
@@ -513,21 +546,21 @@ function render_drum_row(rns, ix, row)
                 pad[2] = 0.0
                 pad[3] = 0.0
                 if is_selected and is_selected_line(i, selection) then
-                    pad[3] = pad[3] + 0.3
+                    pad[3] = pad[3] + 0.05
                 end
             else
                 pad[1] = color[1]
                 pad[2] = 1.0
                 
                 if note_value < 120 and volume_value >= 128 then
-                    pad[3] = 0.8
+                    pad[3] = 0.9
                 elseif note_value < 120 then
-                    pad[3] = 0.3 + 0.5 * volume_value / 128
+                    pad[3] = 0.1 + 0.8 * volume_value / 128
                 end
 
                 if is_selected and is_selected_line(i, selection) then
                     pad[2] = 0.5
-                    pad[3] = pad[3] + 0.2
+                    pad[3] = pad[3] + 0.05
                 end
             end
         else
@@ -745,7 +778,7 @@ function ui_pad_press(row, column)
         local seq_ix = PERFORM_SEQUENCE_VIEW_POS + row - 1
         local track_ix = PERFORM_TRACK_VIEW_POS + column - 1
         if seq_ix >= 1 and seq_ix <= #renoise.song().sequencer.pattern_sequence and track_ix >= 1 and track_ix <= renoise.song().sequencer_track_count then
-            if (not UI_SELECT_PRESSED and UI_ALT_PRESSED) or UI_PAD_PRESSED_COUNT>=1 then
+            if (not UI_SHIFT_PRESSED and UI_ALT_PRESSED) or UI_PAD_PRESSED_COUNT>=1 then
                 local source = renoise.song():pattern(renoise.song().sequencer:pattern(rns.selected_sequence_index)):track(rns.selected_track_index)
                 local target = renoise.song():pattern(renoise.song().sequencer:pattern(seq_ix)):track(track_ix)
                 target:copy_from(source)
@@ -817,7 +850,7 @@ function ui_pad_press(row, column)
                     note_column:clear()
                 end)
             end
-        elseif UI_SHIFT_PRESSED or UI_PAD_PRESSED_COUNT > 1 then
+        elseif UI_SHIFT_PRESSED or UI_PAD_PRESSED_COUNT >= 1 then
             local start_line = rns.selected_line_index
             local start_track = rns.selected_track_index
             local start_column = rns.selected_note_column_index
@@ -921,7 +954,7 @@ end
 
 function ui_step_release()
     UI_STEP_PRESSED = false
-    if not UI_STEP_PROCESSED and (UI_MODE == MODE_NOTE or MODE == MODE_DRUM) then
+    if not UI_STEP_PROCESSED and (MODE == MODE_NOTE or MODE == MODE_DRUM) then
         local line_count = renoise.song().selected_pattern.number_of_lines
         local new_line
         if UI_SHIFT_PRESSED then
@@ -967,6 +1000,13 @@ end
 function ui_alt_release()
     UI_ALT_PRESSED = false
     ui_update_nav_buttons()
+    ui_update_state_buttons()
+end
+
+function ui_browse_press()
+    UI_BROWSE_PRESSED = not UI_BROWSE_PRESSED
+    renoise.app().window.disk_browser_is_visible = UI_BROWSE_PRESSED
+    renoise.app().window.instrument_box_is_visible = true
     ui_update_state_buttons()
 end
 
@@ -1166,7 +1206,11 @@ function ui_pattern_prev()
 end
 
 function ui_select_prev()
-    if MODE == MODE_PERFORM then
+    if UI_BROWSE_PRESSED then
+        if rns.selected_instrument_index > 1 then
+            rns.selected_instrument_index = rns.selected_instrument_index - 1
+        end
+    elseif MODE == MODE_PERFORM then
         if PERFORM_SEQUENCE_VIEW_POS > 1 then
             PERFORM_SEQUENCE_VIEW_POS = PERFORM_SEQUENCE_VIEW_POS - 1
             ui_update_nav_buttons()
@@ -1198,7 +1242,11 @@ end
 
 function ui_select_next()
     local seq_len = renoise.song().transport.song_length.sequence
-    if MODE == MODE_PERFORM then
+    if UI_BROWSE_PRESSED then
+        if rns.selected_instrument_index < #rns.instruments then
+            rns.selected_instrument_index = rns.selected_instrument_index + 1
+        end
+    elseif MODE == MODE_PERFORM then
         if PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS <= seq_len then
             PERFORM_SEQUENCE_VIEW_POS = PERFORM_SEQUENCE_VIEW_POS + 1
             ui_update_nav_buttons()
@@ -1327,21 +1375,178 @@ function ui_row_select(index)
 end
 
 function ui_note_press()
-    MODE = MODE_NOTE
-    ui_update_nav_buttons()
-    mark_as_dirty()
+    if UI_SHIFT_PRESSED then
+        rns.transport.record_quantize_enabled = not rns.transport.record_quantize_enabled
+    else
+        MODE = MODE_NOTE
+        renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
+        ui_update_nav_buttons()
+        mark_as_dirty()
+    end
 end
 
 function ui_drum_press()
-    MODE = MODE_DRUM
-    ui_update_nav_buttons()
-    mark_as_dirty()
+    if UI_SHIFT_PRESSED then
+        rns.transport.loop_block_enabled = not rns.transport.loop_block_enabled
+    else
+        MODE = MODE_DRUM
+        renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
+        ui_update_nav_buttons()
+        mark_as_dirty()
+    end
 end
 
 function ui_perform_press()
-    MODE = MODE_PERFORM
-    ui_update_nav_buttons()
-    mark_as_dirty()
+    if UI_SHIFT_PRESSED then
+        renoise.app().window.upper_frame_is_visible = not renoise.app().window.upper_frame_is_visible
+        if renoise.app().window.upper_frame_is_visible then
+            renoise.app().window.active_upper_frame = renoise.ApplicationWindow.UPPER_FRAME_MASTER_SPECTRUM
+        end
+    else
+        MODE = MODE_PERFORM
+        renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
+        ui_update_nav_buttons()
+        mark_as_dirty()
+    end
+end
+
+function ui_song_press()
+    if UI_SHIFT_PRESSED then
+        rns.transport.metronome_enabled = not rns.transport.metronome_enabled
+    else
+        rns.transport.loop_pattern = not rns.transport.loop_pattern
+    end
+end
+
+function ui_play_press()
+    if UI_SHIFT_PRESSED then
+        rns.transport:start(renoise.Transport.PLAYMODE_RESTART_PATTERN)
+    else
+        rns.transport:start(renoise.Transport.PLAYMODE_CONTINUE_PATTERN)
+    end
+end
+
+function ui_stop_press()
+    if UI_SHIFT_PRESSED then
+        rns.transport.metronome_precount_enabled = not rns.transport.metronome_precount_enabled
+    else
+        rns.transport:stop()
+    end
+end
+
+function ui_rec_press()
+    if UI_SHIFT_PRESSED then
+        rns.transport.follow_player = not rns.transport.follow_player
+    else
+        rns.transport.edit_mode = not rns.transport.edit_mode
+    end
+end
+
+function interpolate(volume, panning)
+    if MODE == MODE_NOTE or MODE == MODE_DRUM then
+        local line_count = renoise.song().selected_pattern.number_of_lines
+        local selection = renoise.song().selection_in_pattern
+        for i = 1, #FLAT_ROWS do 
+            local row = FLAT_ROWS[i]
+            if row ~= nil then
+                local track_index = row.track_index
+                local note_column_index = row.note_column_index
+                local is_selected = is_selected_column(track_index, note_column_index, selection)
+                local track = renoise.song().selected_pattern.tracks[track_index]
+    
+                local start_line = selection.start_line
+                local end_line = selection.end_line
+
+                local len = end_line - start_line
+
+                local start_note = track:line(start_line):note_column(note_column_index)
+                local end_note = track:line(end_line):note_column(note_column_index)
+
+                local int_volume = volume and start_note.volume_value < 128 and end_note.volume_value < 128
+                local int_panning = panning and start_note.panning_value < 128 and end_note.panning_value < 128
+
+                local start_volume = start_note.volume_value
+                local start_panning = start_note.panning_value
+
+                local end_volume = end_note.volume_value
+                local end_panning = end_note.panning_value
+
+                for j = 1, line_count do
+                    local line = track:line(j)
+                    local data = line.note_columns[note_column_index]
+                    if is_selected and is_selected_line(j, selection) then
+                        if int_volume then
+                            data.volume_value = start_volume + (end_volume-start_volume)/len*(j-start_line)
+                        end
+                        if int_panning then
+                            data.panning_value = start_panning + (end_panning-start_panning)/len*(j-start_line)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function ui_mode_press()
+    UI_MODE_PRESSED = true
+end
+
+function ui_mode_release()
+    UI_MODE_PRESSED = false
+end
+
+function ui_knob1_touch()
+    if MODE == MODE_DRUM or MODE == MODE_NOTE then
+        if UI_MODE_PRESSED then
+            interpolate(true,false)
+        elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
+            apply_to_selection(function(data) data.volume_string = '..' end)
+        end
+    end
+end
+
+function ui_knob2_touch()
+    if MODE == MODE_DRUM or MODE == MODE_NOTE then
+        if UI_MODE_PRESSED then
+            interpolate(false,true)
+        elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
+            apply_to_selection(function(data) data.panning_string = '..' end)
+        end
+    end
+end
+
+function ui_knob3_touch()
+    if MODE == MODE_DRUM or MODE == MODE_NOTE then
+        if UI_MODE_PRESSED then
+        elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
+            apply_to_selection(function(data) data.delay_string = '..' end)
+        end
+    end
+end
+
+function ui_knob4_touch()
+    -- noop
+end
+
+function ui_knob1(value)
+end
+
+function ui_knob2(value)
+end
+
+function ui_knob3(value)
+end
+
+function ui_knob4(value)
+end
+
+function ui_select(value)
+    if value > 0 then
+        ui_select_next()
+    else
+        ui_select_prev()
+    end
 end
 
 function ui_update_nav_buttons()
@@ -1350,76 +1555,105 @@ function ui_update_nav_buttons()
 
     -- grid prev/next
     if MODE == MODE_NOTE then
-        UI_NOTE_DEBUG.color = {255, 255, 0}
-        UI_DRUM_DEBUG.color = {0,0,0}
-        UI_PERFORM_DEBUG.color = {0,0,0}
+        midi_note(COLOR_YELLOW)
+        midi_drum(COLOR_OFF)
+        midi_perform(COLOR_OFF)
+        UI_NOTE_DEBUG.color = COLOR_YELLOW
+        UI_DRUM_DEBUG.color = COLOR_OFF
+        UI_PERFORM_DEBUG.color = COLOR_OFF
     elseif MODE == MODE_DRUM then
-        UI_NOTE_DEBUG.color = {0, 0, 0}
-        UI_DRUM_DEBUG.color = {255,255,0}
-        UI_PERFORM_DEBUG.color = {0,0,0}
+        midi_note(COLOR_OFF)
+        midi_drum(COLOR_YELLOW)
+        midi_perform(COLOR_OFF)
+        UI_NOTE_DEBUG.color = COLOR_OFF
+        UI_DRUM_DEBUG.color = COLOR_YELLOW
+        UI_PERFORM_DEBUG.color = COLOR_OFF
     elseif MODE == MODE_PERFORM then
-        UI_NOTE_DEBUG.color = {0, 0, 0}
-        UI_DRUM_DEBUG.color = {0,0,0}
-        UI_PERFORM_DEBUG.color = {255,255,0}
+        midi_note(COLOR_OFF)
+        midi_drum(COLOR_OFF)
+        midi_perform(COLOR_YELLOW)
+        UI_NOTE_DEBUG.color = COLOR_OFF
+        UI_DRUM_DEBUG.color = COLOR_OFF
+        UI_PERFORM_DEBUG.color = COLOR_YELLOW
     end
 
     if MODE == MODE_PERFORM then
         if PERFORM_TRACK_VIEW_POS > 1 then
-            UI_GRID_PREV_DEBUG.color = {255, 0, 0}
+            midi_grid_prev(COLOR_RED)
+            UI_GRID_PREV_DEBUG.color = COLOR_RED
         else
-            UI_GRID_PREV_DEBUG.color = {0, 0, 0}
+            midi_grid_prev(COLOR_OFF)
+            UI_GRID_PREV_DEBUG.color = COLOR_OFF
         end
         if PERFORM_TRACK_VIEW_POS + PAD_COLUMNS <= rns.sequencer_track_count then
-            UI_GRID_NEXT_DEBUG.color = {255, 0, 0}
+            midi_grid_next(COLOR_RED)
+            UI_GRID_NEXT_DEBUG.color = COLOR_RED
         else
-            UI_GRID_NEXT_DEBUG.color = {0, 0, 0}
+            midi_grid_next(COLOR_OFF)
+            UI_GRID_NEXT_DEBUG.color = COLOR_OFF
         end
         if PERFORM_SEQUENCE_VIEW_POS > 1 then
-            UI_PATTERN_PREV_DEBUG.color = {255, 0, 0}
+            midi_pattern_prev(COLOR_RED)
+            UI_PATTERN_PREV_DEBUG.color = COLOR_RED
         else
-            UI_PATTERN_PREV_DEBUG.color = {0, 0, 0}
+            midi_pattern_prev(COLOR_OFF)
+            UI_PATTERN_PREV_DEBUG.color = COLOR_OFF
         end
         if PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS <= seq_len then
-            UI_PATTERN_NEXT_DEBUG.color = {255, 0, 0}
+            midi_pattern_next(COLOR_RED)
+            UI_PATTERN_NEXT_DEBUG.color = COLOR_RED
         else
-            UI_PATTERN_NEXT_DEBUG.color = {0, 0, 0}
+            midi_pattern_next(COLOR_OFF)
+            UI_PATTERN_NEXT_DEBUG.color = COLOR_OFF
         end
     elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
         if NOTE_STEP_VIEW_POS > 1 then
-            UI_GRID_PREV_DEBUG.color = {255, 0, 0}
+            midi_grid_prev(COLOR_RED)
+            UI_GRID_PREV_DEBUG.color = COLOR_RED
         else
-            UI_GRID_PREV_DEBUG.color = {0, 0, 0}
+            midi_grid_prev(COLOR_OFF)
+            UI_GRID_PREV_DEBUG.color = COLOR_OFF
         end
 
         if NOTE_STEP_VIEW_POS + PAD_COLUMNS <= renoise.song().selected_pattern.number_of_lines then
-            UI_GRID_NEXT_DEBUG.color = {255, 0, 0}
+            midi_grid_next(COLOR_RED)
+            UI_GRID_NEXT_DEBUG.color = COLOR_RED
         else
-            UI_GRID_NEXT_DEBUG.color = {0, 0, 0}
+            midi_grid_next(COLOR_OFF)
+            UI_GRID_NEXT_DEBUG.color = COLOR_OFF
         end
 
         if UI_SHIFT_PRESSED then
             if seq_pos > 1 then
-                UI_PATTERN_PREV_DEBUG.color = {255, 0, 0}
+                midi_pattern_prev(COLOR_RED)
+                UI_PATTERN_PREV_DEBUG.color = COLOR_RED
             else
-                UI_PATTERN_PREV_DEBUG.color = {0, 0, 0}
+                midi_pattern_prev(COLOR_OFF)
+                UI_PATTERN_PREV_DEBUG.color = COLOR_OFF
             end
 
             if seq_pos < seq_len then
-                UI_PATTERN_NEXT_DEBUG.color = {255, 0, 0}
+                midi_pattern_next(COLOR_RED)
+                UI_PATTERN_NEXT_DEBUG.color = COLOR_RED
             else
-                UI_PATTERN_NEXT_DEBUG.color = {0, 0, 0}
+                midi_pattern_next(COLOR_OFF)
+                UI_PATTERN_NEXT_DEBUG.color = COLOR_OFF
             end
         else
             if NOTE_COLUMN_VIEW_POS > 1 then
-                UI_PATTERN_PREV_DEBUG.color = {255, 0, 0}
+                midi_pattern_prev(COLOR_RED)
+                UI_PATTERN_PREV_DEBUG.color = COLOR_RED
             else
-                UI_PATTERN_PREV_DEBUG.color = {0, 0, 0}
+                midi_pattern_prev(COLOR_OFF)
+                UI_PATTERN_PREV_DEBUG.color = COLOR_OFF
             end
 
             if NOTE_COLUMN_VIEW_POS < #FLAT_ROWS - PAD_ROWS + 1 then
-                UI_PATTERN_NEXT_DEBUG.color = {255, 0, 0}
+                midi_pattern_next(COLOR_RED)
+                UI_PATTERN_NEXT_DEBUG.color = COLOR_RED
             else
-                UI_PATTERN_NEXT_DEBUG.color = {0, 0, 0}
+                midi_pattern_next(COLOR_OFF)
+                UI_PATTERN_NEXT_DEBUG.color = COLOR_OFF
             end
         end
 
@@ -1428,23 +1662,69 @@ function ui_update_nav_buttons()
     end
 end
 
-function ui_update_state_buttons()
-    if UI_STEP_PRESSED then
-        UI_STEP_DEBUG.color = {255, 255, 0}
+function ui_update_transport_buttons()
+    if rns.transport.loop_pattern then
+        midi_song(COLOR_GREEN)
+        UI_SONG_DEBUG.color = COLOR_GREEN
     else
-        UI_STEP_DEBUG.color = {0,0,0}
+        midi_song(COLOR_YELLOW)
+        UI_SONG_DEBUG.color = COLOR_YELLOW
+    end
+
+    if rns.transport.playing then
+        midi_play(COLOR_GREEN)
+        midi_stop(COLOR_OFF)
+        UI_PLAY_DEBUG.color = COLOR_GREEN
+        UI_STOP_DEBUG.color = COLOR_OFF
+    else
+        midi_play(COLOR_OFF)
+        midi_stop(COLOR_YELLOW)
+        UI_PLAY_DEBUG.color = COLOR_OFF
+        UI_STOP_DEBUG.color = COLOR_YELLOW
+    end
+
+    if rns.transport.edit_mode then
+        midi_rec(COLOR_RED)
+        UI_REC_DEBUG.color = COLOR_RED
+    else
+        midi_rec(COLOR_OFF)
+        UI_REC_DEBUG.color = COLOR_OFF
+    end
+
+    mark_as_dirty()
+end
+
+function ui_update_state_buttons()
+    if UI_BROWSE_PRESSED then
+        midi_browse(COLOR_RED)
+        UI_BROWSE_DEBUG.color = COLOR_RED
+    else
+        midi_browse(COLOR_OFF)
+        UI_BROWSE_DEBUG.color = COLOR_OFF
+    end
+
+    if UI_STEP_PRESSED then
+        midi_step(COLOR_YELLOW)
+        UI_STEP_DEBUG.color = COLOR_YELLOW
+    else
+        midi_step(COLOR_OFF)
+        UI_STEP_DEBUG.color = COLOR_OFF
     end
 
     if UI_SHIFT_PRESSED then
-        UI_SHIFT_DEBUG.color = {255, 0, 0}
+        midi_shift(COLOR_YELLOW)
+        UI_SHIFT_DEBUG.color = COLOR_YELLOW
     else
-        UI_SHIFT_DEBUG.color = {0,0,0}
+        midi_shift(COLOR_OFF)
+        UI_SHIFT_DEBUG.color = COLOR_OFF
     end
 
     if UI_ALT_PRESSED then
-        UI_ALT_DEBUG.color = {255, 0, 0}
+        midi_alt(COLOR_YELLOW)
+        UI_ALT_DEBUG.color = COLOR_YELLOW
     else
-        UI_ALT_DEBUG.color = {0,0,0}
+        midi_alt(COLOR_OFF)
+        UI_ALT_DEBUG.color = COLOR_OFF
     end
 end
 
@@ -1528,6 +1808,28 @@ function build_debug_interface()
         width = 54,
         height = 35,
         text = "MODE:"..UI_MODE,
+        pressed = ui_mode_press,
+        released = ui_mode_release
+    }
+    UI_KNOB1_DEBUG = VB:button {
+        width = 35,
+        height = 35,
+        pressed = ui_knob1_touch,
+    }
+    UI_KNOB2_DEBUG = VB:button {
+        width = 35,
+        height = 35,
+        pressed = ui_knob2_touch,
+    }
+    UI_KNOB3_DEBUG = VB:button {
+        width = 35,
+        height = 35,
+        pressed = ui_knob3_touch,
+    }
+    UI_KNOB4_DEBUG = VB:button {
+        width = 35,
+        height = 35,
+        pressed = ui_knob4_touch,
     }
     UI_PATTERN_PREV_DEBUG = VB:button {
         width = 54,
@@ -1557,6 +1859,7 @@ function build_debug_interface()
         width = 54,
         height = 35,
         text = "BROWSE",
+        pressed = ui_browse_press
     }
     UI_GRID_PREV_DEBUG = VB:button {
         width = 54,
@@ -1571,6 +1874,10 @@ function build_debug_interface()
         pressed = ui_grid_next
     }
     top_row:add_child(UI_MODE_DEBUG)
+    top_row:add_child(UI_KNOB1_DEBUG)
+    top_row:add_child(UI_KNOB2_DEBUG)
+    top_row:add_child(UI_KNOB3_DEBUG)
+    top_row:add_child(UI_KNOB4_DEBUG)
     top_row:add_child(UI_PATTERN_PREV_DEBUG)
     top_row:add_child(UI_PATTERN_NEXT_DEBUG)
     top_row:add_child(UI_SELECT_PREV_DEBUG)
@@ -1671,21 +1978,25 @@ function build_debug_interface()
         width = 54,
         height = 35,
         text = "SONG",
+        pressed = ui_song_press
     }
     UI_PLAY_DEBUG = VB:button {
         width = 54,
         height = 35,
         text = "PLAY",
+        pressed = ui_play_press
     }
     UI_STOP_DEBUG = VB:button {
         width = 54,
         height = 35,
         text = "STOP",
+        pressed = ui_stop_press
     }
     UI_REC_DEBUG = VB:button {
         width = 54,
         height = 35,
         text = "REC",
+        pressed = ui_rec_press
     }
 
     lower_row:add_child(UI_STEP_DEBUG)
@@ -1730,3 +2041,270 @@ local entry = {}
 entry.name = "Main Menu:Tools:FIRE..."
 entry.invoke = function() initialize(true) end
 renoise.tool():add_menu_entry(entry)
+
+function midi_mode_led(beat)
+end
+
+local MIDI_NOTE_ON_ACTIONS = {
+    [0x10] = ui_knob1_touch,
+    [0x11] = ui_knob2_touch,
+    [0x12] = ui_knob3_touch,
+    [0x13] = ui_knob4_touch,
+    [0x19] = nil, -- SELECT
+    [0x1a] = ui_mode_press,
+    [0x1f] = ui_pattern_prev,
+    [0x20] = ui_pattern_next,
+    [0x21] = ui_browse_press,
+    [0x22] = ui_grid_prev,
+    [0x23] = ui_grid_next,
+    [0x24] = function() ui_row_select(1) end,
+    [0x25] = function() ui_row_select(2) end,
+    [0x26] = function() ui_row_select(3) end,
+    [0x27] = function() ui_row_select(4) end,
+    [0x2c] = ui_step_press,
+    [0x2d] = ui_note_press,
+    [0x2e] = ui_drum_press,
+    [0x2f] = ui_perform_press,
+    [0x30] = ui_shift_press,
+    [0x31] = ui_alt_press,
+    [0x32] = ui_song_press,
+    [0x33] = ui_play_press,
+    [0x34] = ui_stop_press,
+    [0x35] = ui_rec_press,
+}
+
+local MIDI_NOTE_OFF_ACTIONS = {
+    [0x10] = nil, -- ui_knob1_touch
+    [0x11] = nil, --ui_knob2_touch
+    [0x12] = nil, -- ui_knob3_touch
+    [0x13] = nil, -- ui_knob4_touch
+    [0x19] = nil, -- SELECT
+    [0x1a] = ui_mode_release,
+    [0x1f] = nil, -- ui_pattern_prev
+    [0x20] = nil, -- ui_pattern_next
+    [0x21] = nil, -- ui_browse_press
+    [0x22] = nil, -- ui_grid_prev
+    [0x23] = nil, -- ui_grid_next
+    [0x24] = nil, -- function() ui_row_select(1) end
+    [0x25] = nil, -- function() ui_row_select(2) end
+    [0x26] = nil, -- function() ui_row_select(3) end
+    [0x27] = nil, -- function() ui_row_select(4) end
+    [0x2c] = ui_step_release,
+    [0x2d] = nil, -- ui_note_press
+    [0x2e] = nil, -- ui_drum_press
+    [0x2f] = nil, -- ui_perform_press
+    [0x30] = ui_shift_release,
+    [0x31] = ui_alt_release,
+    [0x32] = nil, -- ui_song_press
+    [0x33] = nil, -- ui_play_press
+    [0x34] = nil, -- ui_stop_press
+    [0x35] = nil, -- ui_rec_press
+}
+
+local MIDI_CC_ACTIONS = {
+    [0x10] = ui_knob1,
+    [0x11] = ui_knob2,
+    [0x12] = ui_knob3,
+    [0x13] = ui_knob4,
+    [0x76] = ui_select
+}
+
+function get_color_index(color, red, yellow, green)
+    if yellow and red then
+        if color[1] == 0 and color[2] == 0 then
+            return 0
+        elseif color[1] < 128 and color[2] == 0 then
+            return 1
+        elseif color[1] < 256 and color[2] == 0 then
+            return 3
+        elseif color[1] < 128 and color[2] < 128 then
+            return 2
+        elseif color[1] < 256 and color[2] < 256 then
+            return 4 
+        end
+    elseif yellow and green then
+        if color[2] == 0 and color[1] == 0 then
+            return 0
+        elseif color[2] < 128 and color[1] == 0 then
+            return 1
+        elseif color[2] < 256 and color[1] == 0 then
+            return 3
+        elseif color[2] < 128 and color[1] < 128 then
+            return 2
+        elseif color[2] < 256 and color[1] < 256 then
+            return 4 
+        end
+    elseif red and green then
+        if color[1] == 0 and color[2] == 0 then
+            return 0
+        elseif color[1] < 128 and color[2] == 0 then
+            return 1
+        elseif color[2] < 128 and color[1] == 0 then
+            return 2
+        elseif color[1] < 256 and color[2] == 0 then
+            return 3
+        elseif color[2] < 256 and color[1] == 0 then
+            return 4
+        end
+
+    elseif yellow then
+        if color[1] == 0 and color[2] == 0 then
+            return 0
+        elseif color[1] < 128 and color[2] < 128 then
+            return 1
+        elseif color[1] < 256 and color[2] < 256 then
+            return 2
+        end
+    elseif green then
+        if color[2] == 0 then
+            return 0
+        elseif color[2] < 128 then
+            return 1
+        elseif color[2] < 256 then
+            return 2
+        end
+    elseif red then
+        if color[1] == 0 then
+            return 0
+        elseif color[1] < 128 then
+            return 1
+        elseif color[1] < 256 then
+            return 2
+        end
+    end
+    return 0
+end
+
+function midi_init()
+    for i = 0, PAD_ROWS-1 do
+        for j = 0, PAD_COLUMNS-1 do
+            MIDI_NOTE_ON_ACTIONS[0x36 + i*16 + j] = function() ui_pad_press(i+1, j+1) end
+            MIDI_NOTE_OFF_ACTIONS[0x36 + i*16 + j] = function() ui_pad_release(i+1, j+1) end
+        end
+    end
+
+    MIDI_IN = renoise.Midi.create_input_device('FL STUDIO FIRE', midi_callback)
+    MIDI_OUT = renoise.Midi.create_output_device('FL STUDIO FIRE')
+end
+
+function midi_mode(value, extended)
+    if not extended then
+        MIDI_OUT:send {0xb0, 0x1b, math.floor(value % 4)}
+    else
+        MIDI_OUT:send {0xb0, 0x1b, 0x10 + math.floor(value % 16)}
+    end
+end
+
+function midi_pattern_prev(color)
+    MIDI_OUT:send {0xb0, 0x1f, get_color_index(color, true, false, false)}
+end
+
+function midi_pattern_next(color)
+    MIDI_OUT:send {0xb0, 0x20, get_color_index(color, true, false, false)}
+end
+
+function midi_browse(color)
+    MIDI_OUT:send {0xb0, 0x21, get_color_index(color, true, false, false)}
+end
+
+function midi_grid_prev(color)
+    MIDI_OUT:send {0xb0, 0x22, get_color_index(color, true, false, false)}
+end
+
+function midi_grid_next(color)
+    MIDI_OUT:send {0xb0, 0x23, get_color_index(color, true, false, false)}
+end
+
+function midi_row(row, color)
+    MIDI_OUT:send {0xb0, 0x24 + row - 1, get_color_index(color, false, false, true)}
+end
+
+function midi_indicator(row, color)
+    MIDI_OUT:send {0xb0, 0x28 + row - 1, get_color_index(color, true, false, true)}
+end
+
+function midi_alt(color)
+    MIDI_OUT:send {0xb0, 0x31, get_color_index(color,false,true,false)}
+end
+
+function midi_stop(color)
+    MIDI_OUT:send {0xb0, 0x34, get_color_index(color,false,true,false)}
+end
+
+function midi_step(color)
+    MIDI_OUT:send {0xb0, 0x2c, get_color_index(color,true,true,false)}
+end
+
+function midi_note(color)
+    MIDI_OUT:send {0xb0, 0x2d, get_color_index(color,true,true,false)}
+end
+
+function midi_drum(color)
+    MIDI_OUT:send {0xb0, 0x2e, get_color_index(color,true,true,false)}
+end
+
+function midi_perform(color)
+    MIDI_OUT:send {0xb0, 0x2f, get_color_index(color,true,true,false)}
+end
+
+function midi_shift(color)
+    MIDI_OUT:send {0xb0, 0x30, get_color_index(color,true,true,false)}
+end
+
+function midi_rec(color)
+    MIDI_OUT:send {0xb0, 0x35, get_color_index(color,true,true,false)}
+end
+
+function midi_song(color)
+    MIDI_OUT:send {0xb0, 0x32, get_color_index(color,false,true,true)}
+end
+
+function midi_play(color)
+    MIDI_OUT:send {0xb0, 0x33, get_color_index(color,false,true,true)}
+end
+
+function midi_pad_start()
+    return { 0xf0, 0x47, 0x7f, 0x43, 0x65, 0x00, 0x00 }
+end
+
+function midi_pad(array,row,column,color)
+    local pos = #array+1
+    array[pos] = (row-1)*16 + column - 1
+    array[pos+1] = bit.rshift(color[1],1)
+    array[pos+2] = bit.rshift(color[2],1)
+    array[pos+3] = bit.rshift(color[3],1)
+end
+
+function midi_pad_end(array)
+    local payload_len = #array - 7
+    if payload_len == 0 then
+        return
+    end
+    array[6] = bit.rshift(payload_len,7)
+    array[7] = bit.band(payload_len,0x7f)
+    array[#array+1] = 0xf7
+    MIDI_OUT:send(array)
+end
+
+function midi_callback(message)
+    if message[1] == 0x90 then
+        local handler = MIDI_NOTE_ON_ACTIONS[message[2]]
+        if handler ~= nil then
+            handler()
+        end
+    elseif message[1] == 0x80 then
+        local handler = MIDI_NOTE_OFF_ACTIONS[message[2]]
+        if handler ~= nil then
+            handler()
+        end
+    elseif message[1] == 0xb0 then
+        local handler = MIDI_CC_ACTIONS[message[2]]
+        local value = message[3]
+        if value > 0x3f then
+            value = value - 0x80
+        end
+        if handler ~= nil then
+            handler(value)
+        end
+    end
+end
