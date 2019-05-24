@@ -11,6 +11,9 @@ require (_xlibroot..'xPatternSequencer')
 
 rns = nil
 
+local MY_INTERFACE = nil
+local MY_INTERFACE_RACK = nil
+
 local MIDI_IN
 local MIDI_OUT
 
@@ -106,9 +109,26 @@ local COLOR_GREEN = {0,255,0}
 local COLOR_YELLOW_LOW = {127,127,0}
 local COLOR_YELLOW = {255,255,0}
 
+local INITIALIZED = false
+
 function initialize() 
-    midi_init()
-    build_debug_interface()
+    renoise.tool().app_new_document_observable:add_notifier(function()
+        rns = renoise.song()
+        rns_initialize()
+    end)
+    rns = renoise.song()
+    if rns ~= nil then
+        rns_initialize()
+    end
+end
+
+function rns_initialize()
+    if not INITIALIZED then 
+        INITIALIZED = true
+
+        midi_init()
+        build_debug_interface()
+    end
 
     for r = 1, PAD_ROWS do
         PADS[r] = table.create()
@@ -122,11 +142,6 @@ function initialize()
             PADS_2ND[r][c] = { -1, -1, -1, false }
         end
     end
-
-    renoise.tool().app_new_document_observable:add_notifier(function()
-        rns = renoise.song()
-    end)
-    rns = renoise.song()
 
     attach_notifier(nil)
     
@@ -2220,7 +2235,7 @@ function build_debug_interface()
     columns:add_child(lower_row)
 
     -- Racks
-    local rack = VB:column {
+    MY_INTERFACE_RACK = VB:column {
       uniform = true,
       margin = renoise.ViewBuilder.DEFAULT_DIALOG_MARGIN,
       spacing = renoise.ViewBuilder.DEFAULT_CONTROL_SPACING,
@@ -2233,24 +2248,7 @@ function build_debug_interface()
       },
   
     }
-  
-    -- Show dialog
-    local MY_INTERFACE = renoise.app():show_custom_dialog("FIRE", rack, debug_key_handler)
-  
   end
-
---------------------------------------------------------------------------------
---  Menu
---------------------------------------------------------------------------------
-
-local entry = {}
-
-entry.name = "Main Menu:Tools:FIRE..."
-entry.invoke = function() initialize(true) end
-renoise.tool():add_menu_entry(entry)
-
-function midi_mode_led(beat)
-end
 
 local MIDI_NOTE_ON_ACTIONS = {
     [0x10] = ui_knob1_touch,
@@ -2588,3 +2586,20 @@ function midi_callback(message)
         end
     end
 end
+
+--------------------------------------------------------------------------------
+--  Menu
+--------------------------------------------------------------------------------
+
+local entry = {}
+
+entry.name = "Main Menu:Tools:Debug FIRE..."
+entry.invoke = function() 
+    if MY_INTERFACE == nil then
+        MY_INTERFACE = renoise.app():show_custom_dialog("FIRE", MY_INTERFACE_RACK, debug_key_handler)
+    end
+end
+
+renoise.tool():add_menu_entry(entry)
+initialize(true) 
+
