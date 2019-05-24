@@ -794,6 +794,10 @@ function ui_pad_press(row, column)
             elseif UI_STEP_PRESSED then
                 rns.sequencer:set_track_sequence_slot_is_muted(track_ix,seq_ix,not rns.sequencer:track_sequence_slot_is_muted(track_ix,seq_ix))
                 mark_as_dirty()
+            elseif UI_ALT_PRESSED and UI_SHIFT_PRESSED then
+                local target = renoise.song():pattern(renoise.song().sequencer:pattern(seq_ix)):track(track_ix)
+                target:clear()
+                mark_as_dirty()
             elseif not UI_ALT_PRESSED and not UI_SHIFT_PRESSED then
                 rns.selected_sequence_index = seq_ix
                 rns.selected_track_index = track_ix
