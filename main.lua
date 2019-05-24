@@ -23,8 +23,6 @@ local ROW_SELECT_2ND = table.create()
 local ROW_INDICATOR = table.create()
 local ROW_INDICATOR_2ND = table.create()
 
-local FLAT_ROWS = table.create()
-
 local PADS_DEBUG = table.create()
 local ROW_SELECT_DEBUG = table.create()
 local ROW_INDICATOR_DEBUG = table.create()
@@ -32,9 +30,8 @@ local ROW_INDICATOR_DEBUG = table.create()
 local MODE_NOTE = 1
 local MODE_DRUM = 2
 local MODE_PERFORM = 3
-local MODE_PERFORM_ALT = 4
 
-local MODE = MODE_NOTE
+local MODE = MODE_PERFORM
 
 local NOTE_STEP_VIEW_POS = 1
 local NOTE_COLUMN_VIEW_POS = 1
@@ -65,6 +62,7 @@ local UI_KNOB3_DEBUG
 local UI_KNOB4_DEBUG
 
 local UI_PAD_PRESSED_COUNT = 0
+local UI_PAD_PROCESSED = false
 
 local UI_SELECT_PRESSED = false
 
@@ -109,6 +107,7 @@ local COLOR_YELLOW_LOW = {127,127,0}
 local COLOR_YELLOW = {255,255,0}
 
 function initialize() 
+    midi_init()
     build_debug_interface()
 
     for r = 1, PAD_ROWS do
@@ -128,8 +127,6 @@ function initialize()
         rns = renoise.song()
     end)
     rns = renoise.song()
-
-    midi_init()
 
     attach_notifier(nil)
     
@@ -174,7 +171,7 @@ function attach_notifier(notification)
     ui_update_nav_buttons()
 end
 
-function mark_as_dirty(pos)
+function mark_as_dirty()
     QUEUE_RENDER = true
 end
 
@@ -186,21 +183,25 @@ function idler(notification)
     local new_playback_line = renoise.song().transport.playback_pos.line
     local new_playback_sequence = renoise.song().transport.playback_pos.sequence
     local new_playback_beat = renoise.song().transport.playback_pos_beats
-    if CURRENT_TRACK ~= new_track_index and new_note_column_index > 0 then
-        CURRENT_TRACK = new_track_index
-        QUEUE_RENDER = true
-    end
     if CURRENT_LINE ~= new_line_index then
         CURRENT_LINE = new_line_index
         focus_line()
         QUEUE_RENDER = true
     end
-    if CURRENT_SEQUENCE ~= new_sequence_index then
-        CURRENT_SEQUENCE = new_sequence_index
-        QUEUE_RENDER = true
-    end
     if CURRENT_NOTE_COLUMN ~= new_note_column_index and new_note_column_index > 0 then
         CURRENT_NOTE_COLUMN = new_note_column_index
+        focus_note_column()
+        QUEUE_RENDER = true
+    end
+    if CURRENT_TRACK ~= new_track_index and new_note_column_index > 0 then
+        CURRENT_TRACK = new_track_index
+        focus_track()
+        focus_note_column()
+        QUEUE_RENDER = true
+    end
+    if CURRENT_SEQUENCE ~= new_sequence_index then
+        CURRENT_SEQUENCE = new_sequence_index
+        focus_sequence()        
         QUEUE_RENDER = true
     end
 
@@ -233,7 +234,6 @@ end
 
 function render()
     if MODE == MODE_NOTE or MODE == MODE_DRUM then
-        flat_rows(renoise.song())
         render_note()
     elseif MODE == MODE_PERFORM then
         render_perform()
@@ -275,12 +275,41 @@ function render_debug()
                         hsv[3] = math.min(hsv[3], 1.0)
                     end
                 end
-                PADS_DEBUG[r][c].color = hsv_to_rgb(hsv)
                 midi_pad(sysex, r, c, hsv_to_rgb(hsv))
             end
         end
 
         midi_pad_end(sysex)
+    end
+end
+
+function focus_track()
+    if CURRENT_TRACK > PERFORM_TRACK_VIEW_POS + PAD_COLUMNS then
+        PERFORM_TRACK_VIEW_POS = CURRENT_TRACK - PAD_COLUMNS + 1
+        ui_update_nav_buttons()
+    elseif CURRENT_TRACK < PERFORM_TRACK_VIEW_POS then
+        PERFORM_TRACK_VIEW_POS = CURRENT_TRACK
+        ui_update_nav_buttons()
+    end
+end
+
+function focus_sequence()
+    if CURRENT_SEQUENCE > PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS then
+        PERFORM_SEQUENCE_VIEW_POS = CURRENT_SEQUENCE - PAD_ROWS + 1
+        ui_update_nav_buttons()
+    elseif CURRENT_SEQUENCE < PERFORM_SEQUENCE_VIEW_POS then
+        PERFORM_SEQUENCE_VIEW_POS = CURRENT_SEQUENCE
+        ui_update_nav_buttons()
+    end
+end
+
+function focus_note_column()
+    if CURRENT_NOTE_COLUMN > NOTE_COLUMN_VIEW_POS + PAD_ROWS then
+        NOTE_COLUMN_VIEW_POS = CURRENT_NOTE_COLUMN - PAD_ROWS + 1
+        ui_update_nav_buttons()
+    elseif CURRENT_NOTE_COLUMN < NOTE_COLUMN_VIEW_POS then
+        NOTE_COLUMN_VIEW_POS = CURRENT_NOTE_COLUMN
+        ui_update_nav_buttons()
     end
 end
 
@@ -303,6 +332,8 @@ function render_perform()
             ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {255,0,0}
         elseif i == PLAYBACK_NEXT_SEQUENCE then
             ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,255,0}
+        elseif i <= renoise.song().transport.song_length.sequence then
+            ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,127,0}
         else
             ROW_INDICATOR[i-PERFORM_SEQUENCE_VIEW_POS+1] = {0,0,0}
         end
@@ -345,33 +376,11 @@ function render_perform()
     end
 end
 
-function render_note_cursor(rns)
-    local rns = renoise.song()
-
-    local rows = FLAT_ROWS
-    local rows_count = #rows
-
+function render_note_cursor()
     local track_index = CURRENT_TRACK
     local note_column_index = CURRENT_NOTE_COLUMN
 
-    local current_row = 0
-    for i = 1, rows_count do
-        if rows[i].track_index == track_index and rows[i].note_column_index == note_column_index then
-            current_row = i
-            break
-        end
-    end
-
-    if current_row > 0 then
-        CURRENT_ROW = current_row
-    end
-
-    -- adjust view pos
-    --if NOTE_COLUMN_VIEW_POS > CURRENT_ROW then
-    --    NOTE_COLUMN_VIEW_POS = CURRENT_ROW
-    --elseif NOTE_COLUMN_VIEW_POS + PAD_ROWS - 1 < CURRENT_ROW then
-    --    NOTE_COLUMN_VIEW_POS = CURRENT_ROW - PAD_ROWS + 1
-    --end
+    CURRENT_ROW = CURRENT_NOTE_COLUMN
 
     local new_step_pos = PLAYBACK_LINE - NOTE_STEP_VIEW_POS + 1
     if renoise.song().selected_sequence_index ~= PLAYBACK_SEQUENCE or new_step_pos <= 0 or new_step_pos > PAD_COLUMNS then
@@ -379,21 +388,17 @@ function render_note_cursor(rns)
     end
 
     for i = 1, PAD_ROWS do
-        if rows[NOTE_COLUMN_VIEW_POS + i - 1].track_index == CURRENT_TRACK then
+        if NOTE_COLUMN_VIEW_POS + i - 1 == CURRENT_NOTE_COLUMN then
             ROW_SELECT[i] = { 0, 255, 0 }
         else
             ROW_SELECT[i] = { 0, 0, 0 }
         end
 
-        --local playback_pattern_index = renoise.song().sequencer:pattern(renoise.song().transport.playback_pos.sequence)
-        --local playback_track = renoise.song():pattern(playback_pattern_index):track(rows[NOTE_COLUMN_VIEW_POS+i-1].track_index)
-        --local is_alias = false
-        --if playback_track.is_alias then
-        --    is_alias = true
-        --    playback_pattern_index = playback_track.alias_pattern_index
-        --end
-
-        ROW_INDICATOR[i] = { 0, 0, 0 }
+        if NOTE_COLUMN_VIEW_POS + i - 1 <= rns:track(rns.selected_track_index).visible_note_columns then
+            ROW_INDICATOR[i] = { 0, 127, 0 }
+        else
+            ROW_INDICATOR[i] = { 0, 0, 0 }
+        end
 
         if NOTE_CURSOR_POS > 0 then
             PADS[i][NOTE_CURSOR_POS][4] = false
@@ -404,48 +409,50 @@ function render_note_cursor(rns)
     end
 
     NOTE_CURSOR_POS = new_step_pos
-
-    return rows
 end
 
 function render_note()
-    local rns = renoise.song()
-
-    local rows = render_note_cursor(rns)
+    render_note_cursor()
+    local column_num = rns:track(rns.selected_track_index).visible_note_columns
     local last_note = table.create()
 
     if MODE == MODE_NOTE or (MODE == MODE_DRUM and UI_STEP_PRESSED) then
         local prev_track = -1
         for i = 1, NOTE_COLUMN_VIEW_POS + PAD_ROWS - 1 do 
-            if rows[i] ~= nil then
+            if i <= column_num then
                 if last_note[i] == nil then
                     last_note[i] = -1
                 end
-                if prev_track ~= rows[i].track_index then
-                    prev_track = rows[i].track_index
-                    for pos,line in rns.pattern_iterator:note_columns_in_pattern_track(rns.selected_pattern_index,prev_track,true) do 
-                        if pos.line >= NOTE_STEP_VIEW_POS then 
-                            break
-                        end
-                        local note_value = line.note_value
-                        if note_value == 120 then 
-                            last_note[i+pos.column-1] = -1
-                        elseif note_value < 120 then
-                            last_note[i+pos.column-1] = note_value % 12
-                        end
+                for pos,line in rns.pattern_iterator:note_columns_in_pattern_track(rns.selected_pattern_index,rns.selected_track_index,true) do 
+                    if pos.line >= NOTE_STEP_VIEW_POS then 
+                        break
+                    end
+                    local note_value = line.note_value
+                    if note_value == 120 then 
+                        last_note[i+pos.column-1] = -1
+                    elseif note_value < 120 then
+                        last_note[i+pos.column-1] = note_value % 12
                     end
                 end
             end
         end
         for i = NOTE_COLUMN_VIEW_POS, NOTE_COLUMN_VIEW_POS + PAD_ROWS - 1 do 
-            if rows[i] ~= nil then
-                render_note_row(rns, i, rows[i], last_note[i])
+            if i<=column_num then
+                render_note_row(i, last_note[i])
+            else
+                for j = 1, PAD_COLUMNS do
+                    PADS[i-NOTE_COLUMN_VIEW_POS+1][j] = {0,0,0,false}
+                end
             end
         end
     else
         for i = NOTE_COLUMN_VIEW_POS, NOTE_COLUMN_VIEW_POS + PAD_ROWS - 1 do 
-            if rows[i] ~= nil then
-                render_drum_row(rns, i, rows[i], last_note[i])
+            if i<=column_num then
+                render_drum_row(i, last_note[i])
+            else
+                for j = 1, PAD_COLUMNS do
+                    PADS[i-NOTE_COLUMN_VIEW_POS+1][j] = {0,0,0,false}
+                end
             end
         end
     end
@@ -453,7 +460,7 @@ end
 
 function is_selected_column(track, column, selection)
     if selection == nil then
-        return track == CURRENT_TRACK and column == CURRENT_NOTE_COLUMN
+        return track == rns.selected_track_index and column == CURRENT_NOTE_COLUMN
     end
     if track < selection.start_track or track > selection.end_track then
         return false
@@ -477,9 +484,9 @@ function is_selected_line(line, selection)
     return true
 end
 
-function render_note_row(rns, ix, row, last_note)
-    local track_index = row.track_index
-    local note_column_index = row.note_column_index
+function render_note_row(ix, last_note)
+    local track_index = rns.selected_track_index
+    local note_column_index = ix
     local color = rgb_to_hsv(rns.tracks[track_index].color)
     local line_count = renoise.song().selected_pattern.number_of_lines
     local selection = rns.selection_in_pattern
@@ -492,6 +499,7 @@ function render_note_row(rns, ix, row, last_note)
         if i <= line_count and i > 0 then
             local line = track:line(i)
             local note_value = line.note_columns[note_column_index].note_value
+            local volume_value = line.note_columns[note_column_index].volume_value
             if note_value < 120 then
                 last_note = note_value % 12
             elseif note_value == 120 then
@@ -508,7 +516,11 @@ function render_note_row(rns, ix, row, last_note)
                 pad[1] = last_note/12.0
                 pad[2] = 1.0
                 if note_value < 120 then
-                    pad[3] = 0.9
+                    if note_value < 120 and volume_value >= 128 then
+                        pad[3] = 0.9
+                    elseif note_value < 120 then
+                        pad[3] = 0.1 + 0.8 * volume_value / 128
+                    end
                 else
                     pad[3] = 0.1
                 end
@@ -525,9 +537,9 @@ function render_note_row(rns, ix, row, last_note)
     end
 end
 
-function render_drum_row(rns, ix, row)
-    local track_index = row.track_index
-    local note_column_index = row.note_column_index
+function render_drum_row(ix)
+    local track_index = rns.selected_track_index
+    local note_column_index = ix
     local color = rgb_to_hsv(rns.tracks[track_index].color)
     local line_count = renoise.song().selected_pattern.number_of_lines
     local selection = rns.selection_in_pattern
@@ -579,8 +591,8 @@ function get_selection()
         selection.end_track = renoise.song().selected_track_index
         selection.start_line = renoise.song().selected_line_index
         selection.end_line = renoise.song().selected_line_index
-        selection.start_column = renoise.song().selected_note_column_index
-        selection.end_column = renoise.song().selected_note_column_index
+        selection.start_column = CURRENT_NOTE_COLUMN
+        selection.end_column = CURRENT_NOTE_COLUMN
     end
     return selection
 end
@@ -666,7 +678,7 @@ function get_nearest_note()
     local track = renoise.song().selected_pattern.tracks[renoise.song().selected_track_index]
     local line_count = renoise.song().selected_pattern.number_of_lines
     local line_index = renoise.song().selected_line_index
-    local note_column_index = renoise.song().selected_note_column_index
+    local note_column_index = CURRENT_NOTE_COLUMN
     for i = 1, line_count do
         if line_index - i < 1 and line_index + i > line_count then
             return nil
@@ -689,22 +701,21 @@ end
 function remap_selection(step_remap, row_remap, ignore_selection)
     local seq_len = renoise.song().transport.song_length.sequence+1
     local current_seq_index = renoise.song().selected_sequence_index
+    local note_column_len = rns:track(rns.selected_track_index).visible_note_columns
     local pattern_copy_index = renoise.song().sequencer:insert_new_pattern_at(seq_len)
     local pattern_copy = renoise.song():pattern(pattern_copy_index)
     renoise.song().selected_sequence_index = current_seq_index
     pattern_copy:copy_from(renoise.song().selected_pattern)
 
     local line_count = renoise.song().selected_pattern.number_of_lines
-    for i = 1, #FLAT_ROWS do 
-        local row = FLAT_ROWS[i]
-        if row ~= nil and (ignore_selection or is_selected_column(row.track_index, row.note_column_index, renoise.song().selection_in_pattern)) then
-            local track_index = row.track_index
-            local note_column_index = row.note_column_index
+    for i = 1, note_column_len do 
+        if (ignore_selection or is_selected_column(rns.selected_track_index, i, renoise.song().selection_in_pattern)) then
+            local track_index = rns.selected_track_index
+            local note_column_index = i
             local new_track_index = track_index
             local new_note_column_index = note_column_index
             if row_remap[i] ~= nil then
-                new_track_index = FLAT_ROWS[i+row_remap[i]].track_index
-                new_note_column_index = FLAT_ROWS[i+row_remap[i]].note_column_index
+                new_note_column_index = i+row_remap[i]
             end
             local track = pattern_copy.tracks[track_index]
             local new_track = renoise.song().selected_pattern:track(new_track_index)
@@ -735,44 +746,27 @@ end
 
 function apply_to_selection(apply)
     local line_count = renoise.song().selected_pattern.number_of_lines
+    local note_column_len = rns:track(rns.selected_track_index).visible_note_columns
     local selection = renoise.song().selection_in_pattern
-    for i = 1, #FLAT_ROWS do 
-        local row = FLAT_ROWS[i]
-        if row ~= nil then
-            local track_index = row.track_index
-            local note_column_index = row.note_column_index
-            local is_selected = is_selected_column(track_index, note_column_index, selection)
-            local track = renoise.song().selected_pattern.tracks[track_index]
+    for i = 1, note_column_len do 
+        local track_index = rns.selected_track_index
+        local note_column_index = i
+        local is_selected = is_selected_column(track_index, note_column_index, selection)
+        local track = renoise.song().selected_pattern.tracks[track_index]
 
-            for j = 1, line_count do
-                local line = track:line(j)
-                local data = line.note_columns[note_column_index]
-                if is_selected and is_selected_line(j, selection) then
-                    apply(data)
-                end
+        for j = 1, line_count do
+            local line = track:line(j)
+            local data = line.note_columns[note_column_index]
+            if is_selected and is_selected_line(j, selection) then
+                apply(data)
             end
         end
     end
     mark_as_dirty()
 end
 
-function flat_rows(rns)
-    FLAT_ROWS = table.create()
-    local ix = 1
-
-    for i = 1, rns.sequencer_track_count do
-        for j = 1, rns.tracks[i].visible_note_columns do
-            FLAT_ROWS[ix] = {}
-            FLAT_ROWS[ix].track_index = i
-            FLAT_ROWS[ix].note_column_index = j
-            ix = ix + 1
-        end
-    end
-
-    return FLAT_ROWS
-end
-
 function ui_pad_press(row, column)
+    UI_PAD_PROCESSED = false
     if MODE == MODE_PERFORM then
         local rns = renoise.song()
         local seq_ix = PERFORM_SEQUENCE_VIEW_POS + row - 1
@@ -801,24 +795,20 @@ function ui_pad_press(row, column)
             elseif not UI_ALT_PRESSED and not UI_SHIFT_PRESSED then
                 rns.selected_sequence_index = seq_ix
                 rns.selected_track_index = track_ix
+                ui_update_nav_buttons()
                 mark_as_dirty()
             end
         end
     elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
-        local rns = renoise.song()
-        local rows = FLAT_ROWS
-
         local row_ix = NOTE_COLUMN_VIEW_POS + row - 1
         local column_ix = NOTE_STEP_VIEW_POS + column - 1
 
-        local row = rows[row_ix]
-
         if UI_STEP_PRESSED then
             UI_STEP_PROCESSED = true
-            local track = rns.selected_pattern.tracks[row.track_index]
+            local track = rns.selected_pattern.tracks[rns.selected_track_index]
             local line_count = rns.selected_pattern.number_of_lines
             if column_ix+1 <= line_count then
-                local note_column = track:line(column_ix+1).note_columns[row.note_column_index]
+                local note_column = track:line(column_ix+1).note_columns[row_ix]
                 if note_column.note_value == 120 then
                     note_column.note_value = 121
                 elseif note_column.note_value == 121 then
@@ -828,16 +818,16 @@ function ui_pad_press(row, column)
 
             -- clean following OFFs
             for i = column_ix, 1, -1 do
-                local note_column = track:line(i).note_columns[row.note_column_index]
+                local note_column = track:line(i).note_columns[row_ix]
                 if note_column.note_value == 120 then
                     note_column.note_value = 121
                 elseif note_column.note_value < 120 then
                     break
                 end
             end
-            if column_ix+1 <= line_count and track:line(column_ix+1).note_columns[row.note_column_index].note_value >= 120 then
+            if column_ix+1 <= line_count and track:line(column_ix+1).note_columns[row_ix].note_value >= 120 then
                 for i = column_ix+2, line_count do
-                    local note_column = track:line(i).note_columns[row.note_column_index]
+                    local note_column = track:line(i).note_columns[row_ix]
                     if note_column.note_value == 120 then
                         note_column.note_value = 121
                     elseif note_column.note_value < 120 then
@@ -846,7 +836,7 @@ function ui_pad_press(row, column)
                 end
             end
         elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
-            if is_selected_column(row.track_index, row.note_column_index, renoise.song().selection_in_pattern) and is_selected_line(column_ix, renoise.song().selection_in_pattern) then
+            if is_selected_column(rns.selected_track_index, row_ix, renoise.song().selection_in_pattern) and is_selected_line(column_ix, renoise.song().selection_in_pattern) then
                 local EMPTY_VOLUME = renoise.PatternLine.EMPTY_VOLUME
                 local EMPTY_INSTRUMENT = renoise.PatternLine.EMPTY_INSTRUMENT
 
@@ -857,23 +847,18 @@ function ui_pad_press(row, column)
         elseif UI_SHIFT_PRESSED or UI_PAD_PRESSED_COUNT >= 1 then
             local start_line = rns.selected_line_index
             local start_track = rns.selected_track_index
-            local start_column = rns.selected_note_column_index
+            local start_column = CURRENT_NOTE_COLUMN
             local end_line = column_ix
-            local end_track = row.track_index
-            local end_column = row.note_column_index
+            local end_track = rns.selected_track_index
+            local end_column = row_ix
         
             if start_line > end_line then
                 start_line = column_ix
                 end_line = rns.selected_line_index
             end
-            if start_track > end_track then
-                start_track = row.track_index
-                start_column = row.note_column_index
-                end_track = rns.selected_track_index
-                end_column = rns.selected_note_column_index
-            elseif start_track == end_track and start_column > end_column then
-                start_column = row.note_column_index
-                end_column = rns.selected_note_column_index
+            if start_column > end_column then
+                start_column = row_ix
+                end_column = CURRENT_NOTE_COLUMN
             end
 
             -- expand end column if needed
@@ -893,13 +878,14 @@ function ui_pad_press(row, column)
             local selected_row = nil
             local selection = get_selection()
             local row_remap = table.create()
-            for i = 1, #FLAT_ROWS do
-                if is_selected_column(FLAT_ROWS[i].track_index, FLAT_ROWS[i].note_column_index,selection) then
+            local column_num = rns:track(rns.selected_track_index).visible_note_columns
+            for i = 1, column_num do
+                if is_selected_column(rns.selected_track_index, i,selection) then
                     if selected_row == nil then
                         selected_row = i
                     end
                     if selected_row ~= nil then
-                        if i + row_ix - selected_row < 1 or i + row_ix - selected_row > #FLAT_ROWS then
+                        if i + row_ix - selected_row < 1 or i + row_ix - selected_row > column_num then
                             return
                         end
                         row_remap[i] = row_ix - selected_row
@@ -913,16 +899,15 @@ function ui_pad_press(row, column)
             end
             remap_selection(step_remap, row_remap, false)
             mark_as_dirty()
-        else
+        elseif row_ix <= rns:track(rns.selected_track_index).visible_note_columns and column_ix < rns.selected_pattern.number_of_lines then
             rns.selection_in_pattern = {}
 
-            rns.selected_track_index = row.track_index
-            rns.selected_note_column_index = row.note_column_index
+            rns.selected_note_column_index = row_ix
             rns.selected_line_index = column_ix
 
             if MODE == MODE_DRUM then
                 local track = rns.selected_pattern.tracks[rns.selected_track_index]
-                local note_column = track:line(rns.selected_line_index).note_columns[rns.selected_note_column_index]
+                local note_column = track:line(rns.selected_line_index).note_columns[row_ix]
                 if note_column.note_value < 120 then
                     note_column:clear()
                 else
@@ -931,6 +916,7 @@ function ui_pad_press(row, column)
                         note_column:clear()
                         note_column.note_value = nearest_note.note_value
                         note_column.instrument_value = nearest_note.instrument_value
+                        UI_PAD_PROCESSED = true
                     end
                 end
             end
@@ -943,6 +929,18 @@ function ui_pad_press(row, column)
 end
 
 function ui_pad_release(row, column)
+    local row_ix = NOTE_COLUMN_VIEW_POS + row - 1
+    local column_ix = NOTE_STEP_VIEW_POS + column - 1
+
+    if row_ix <= rns:track(rns.selected_track_index).visible_note_columns and column_ix < rns.selected_pattern.number_of_lines then
+        if MODE == MODE_DRUM and not UI_PAD_PROCESSED then
+            local track = rns.selected_pattern.tracks[rns.selected_track_index]
+            local note_column = track:line(rns.selected_line_index).note_columns[row_ix]
+            if note_column.note_value < 120 then
+                note_column:clear()
+            end
+        end
+    end
     UI_PAD_PRESSED_COUNT = UI_PAD_PRESSED_COUNT - 1
 end
 
@@ -1017,6 +1015,7 @@ end
 function ui_grid_next()
     local line_count = renoise.song().selected_pattern.number_of_lines
     local track_count = rns.sequencer_track_count
+    local column_num = rns:track(rns.selected_track_index).visible_note_columns
     if MODE == MODE_PERFORM then
         if PERFORM_TRACK_VIEW_POS + PAD_COLUMNS <= track_count then
             PERFORM_TRACK_VIEW_POS = PERFORM_TRACK_VIEW_POS + 1
@@ -1034,18 +1033,18 @@ function ui_grid_next()
             end
             if is_whole_track_selected then
                 remap_selection(step_remap, table.create(), false)
-                for i = 1, #FLAT_ROWS do
-                    if is_selected_column(FLAT_ROWS[i].track_index, FLAT_ROWS[i].note_column_index, selection) then
+                for i = 1, column_num do
+                    if is_selected_column(rns.selected_track_index, i, selection) then
                         for j = line_count - PAD_COLUMNS + 1, line_count do
-                            renoise.song().selected_pattern:track(FLAT_ROWS[i].track_index):line(j):note_column(FLAT_ROWS[i].note_column_index):clear()
+                            renoise.song().selected_pattern:track(rns.selected_track_index):line(j):note_column(i):clear()
                         end
                     end
                 end
             else
                 remap_selection(step_remap, table.create(), true)
-                for i = 1, #FLAT_ROWS do
+                for i = 1, column_num do
                     for j = line_count - PAD_COLUMNS + 1, line_count do
-                        renoise.song().selected_pattern:track(FLAT_ROWS[i].track_index):line(j):clear()
+                        renoise.song().selected_pattern:track(rns.selected_track_index):line(j):clear()
                     end
                 end
                 renoise.song().selected_pattern.number_of_lines = renoise.song().selected_pattern.number_of_lines - PAD_COLUMNS
@@ -1080,6 +1079,7 @@ end
 
 function ui_grid_prev()
     local line_count = renoise.song().selected_pattern.number_of_lines
+    local column_num = rns:track(rns.selected_track_index).visible_note_columns
     if MODE == MODE_PERFORM then
         if PERFORM_TRACK_VIEW_POS > 1 then
             PERFORM_TRACK_VIEW_POS = PERFORM_TRACK_VIEW_POS - 1
@@ -1097,19 +1097,17 @@ function ui_grid_prev()
             end
             if is_whole_track_selected then
                 remap_selection(step_remap, table.create(), false)
-                for i = 1, #FLAT_ROWS do
-                    if is_selected_column(FLAT_ROWS[i].track_index, FLAT_ROWS[i].note_column_index, selection) then
+                for i = 1, column_num do
+                    if is_selected_column(rns.selected_track_index, i, selection) then
                         for j = line_count - PAD_COLUMNS + 1, line_count do
-                            renoise.song().selected_pattern:track(FLAT_ROWS[i].track_index):line(j):note_column(FLAT_ROWS[i].note_column_index):clear()
+                            renoise.song().selected_pattern:track(rns.selected_track_index):line(j):note_column(i):clear()
                         end
                     end
                 end
             else
                 remap_selection(step_remap, table.create(), true)
-                for i = 1, #FLAT_ROWS do
-                    for j = line_count - PAD_COLUMNS + 1, line_count do
-                        renoise.song().selected_pattern:track(FLAT_ROWS[i].track_index):line(j):clear()
-                    end
+                for j = line_count - PAD_COLUMNS + 1, line_count do
+                    renoise.song().selected_pattern:track(rns.selected_track_index):line(j):clear()
                 end
                 renoise.song().selected_pattern.number_of_lines = renoise.song().selected_pattern.number_of_lines - PAD_COLUMNS
             end
@@ -1142,10 +1140,10 @@ function ui_grid_prev()
                 remap_selection(step_remap, table.create(), true)
                 if is_whole_track_selected then
                     -- step 2: clear unselected tracks                
-                    for i = 1, #FLAT_ROWS do
-                        if not is_selected_column(FLAT_ROWS[i].track_index, FLAT_ROWS[i].note_column_index, selection) then
+                    for i = 1, column_num do
+                        if not is_selected_column(rns.selected_track_index, i, selection) then
                             for j = 1, PAD_COLUMNS do
-                                renoise.song().selected_pattern:track(FLAT_ROWS[i].track_index):line(j):note_column(FLAT_ROWS[i].note_column_index):clear()
+                                renoise.song().selected_pattern:track(rns.selected_track_index):line(j):note_column(i):clear()
                             end
                         end
                     end
@@ -1161,6 +1159,8 @@ end
 
 function ui_pattern_next()
     local seq_len = renoise.song().transport.song_length.sequence
+    local column_num = rns:track(rns.selected_track_index).visible_note_columns
+
     if MODE == MODE_PERFORM then
         if PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS <= seq_len then
             PERFORM_SEQUENCE_VIEW_POS = PERFORM_SEQUENCE_VIEW_POS + 1
@@ -1168,14 +1168,31 @@ function ui_pattern_next()
             mark_as_dirty()
         end
     elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
-        if UI_SHIFT_PRESSED then
-            local seq_pos = renoise.song().selected_sequence_index
-            if seq_pos < seq_len then
-                renoise.song().selected_sequence_index = seq_pos+1
+        if UI_SHIFT_PRESSED and not UI_ALT_PRESSED then
+            local track_index = renoise.song().selected_track_index
+            if track_index < rns.sequencer_track_count then
+                renoise.song().selected_track_index = track_index+1
                 ui_update_nav_buttons()
             end
+        elseif UI_ALT_PRESSED and not UI_SHIFT_PRESSED then
+            local track_index = rns.selected_track_index
+            rns:insert_track_at(track_index+1)
+            rns.selected_track_index = track_index+1
+            mark_as_dirty()
+            ui_update_nav_buttons()
+        elseif UI_ALT_PRESSED and UI_SHIFT_PRESSED and rns.sequencer_track_count > 1 then
+            local track_index = rns.selected_track_index
+            for i = rns.selected_track_index+1, rns.sequencer_track_count do
+                if rns:track(i).type == renoise.Track.TRACK_TYPE_SEQUENCER then
+                    rns.selected_track_index = i
+                    break
+                end
+            end
+            rns:delete_track_at(track_index)
+            mark_as_dirty()
+            ui_update_nav_buttons()
         else
-            if NOTE_COLUMN_VIEW_POS < #FLAT_ROWS - PAD_ROWS + 1 then
+            if NOTE_COLUMN_VIEW_POS + PAD_ROWS <= column_num then
                 NOTE_COLUMN_VIEW_POS = NOTE_COLUMN_VIEW_POS + 1
                 ui_update_nav_buttons()
                 mark_as_dirty()
@@ -1193,12 +1210,27 @@ function ui_pattern_prev()
         end
     elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
         if UI_SHIFT_PRESSED then
-            local seq_pos = renoise.song().selected_sequence_index
-            local seq_len = renoise.song().transport.song_length.sequence
-            if seq_pos > 1 then
-                renoise.song().selected_sequence_index = seq_pos-1
+            local track_index = renoise.song().selected_track_index
+            if track_index > 1 then
+                renoise.song().selected_track_index = track_index-1
                 ui_update_nav_buttons()
             end
+        elseif UI_ALT_PRESSED and not UI_SHIFT_PRESSED then
+            local track_index = rns.selected_track_index
+            rns:insert_track_at(track_index)
+            mark_as_dirty()
+            ui_update_nav_buttons()
+        elseif UI_ALT_PRESSED and UI_SHIFT_PRESSED and rns.sequencer_track_count > 1 then
+            local track_index = rns.selected_track_index
+            for i = rns.selected_track_index-1, 1, -1 do
+                if rns:track(i).type == renoise.Track.TRACK_TYPE_SEQUENCER then
+                    rns.selected_track_index = i
+                    break
+                end
+            end
+            rns:delete_track_at(track_index)
+            mark_as_dirty()
+            ui_update_nav_buttons()
         else
             if NOTE_COLUMN_VIEW_POS > 1 then
                 NOTE_COLUMN_VIEW_POS = NOTE_COLUMN_VIEW_POS - 1
@@ -1210,7 +1242,11 @@ function ui_pattern_prev()
 end
 
 function ui_select_prev()
-    if UI_BROWSE_PRESSED then
+    if UI_MODE_PRESSED then
+        if rns:can_undo() then
+            rns:undo()
+        end
+    elseif UI_BROWSE_PRESSED then
         if rns.selected_instrument_index > 1 then
             rns.selected_instrument_index = rns.selected_instrument_index - 1
         end
@@ -1246,7 +1282,11 @@ end
 
 function ui_select_next()
     local seq_len = renoise.song().transport.song_length.sequence
-    if UI_BROWSE_PRESSED then
+    if UI_MODE_PRESSED then
+        if rns:can_redo() then
+            rns:redo()
+        end
+    elseif UI_BROWSE_PRESSED then
         if rns.selected_instrument_index < #rns.instruments then
             rns.selected_instrument_index = rns.selected_instrument_index + 1
         end
@@ -1321,31 +1361,70 @@ function ui_row_select(index)
             end
         end
     elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
-        local row = FLAT_ROWS[NOTE_COLUMN_VIEW_POS + index - 1]
+        local track = rns.selected_pattern:track(rns.selected_track_index)
+        local column_num = rns:track(rns.selected_track_index).visible_note_columns
 
-        if UI_STEP_PRESSED then
-            local playback_pattern_index = renoise.song().sequencer:pattern(renoise.song().transport.playback_pos.sequence)
-            local playback_track = renoise.song():pattern(playback_pattern_index):track(row.track_index)
-            --local is_alias = false
-            --if playback_track.is_alias then
-            --    is_alias = true
-            --    playback_pattern_index = playback_track.alias_pattern_index
-            --end
-    
-            if playback_pattern_index == renoise.song().selected_pattern_index then
-                if renoise.song().sequencer:track_sequence_slot_is_muted(row.track_index,renoise.song().selected_sequence_index) then
-                    renoise.song().sequencer:set_track_sequence_slot_is_muted(row.track_index,renoise.song().selected_sequence_index,false)
-                else
-                    renoise.song().sequencer:set_track_sequence_slot_is_muted(row.track_index,renoise.song().selected_sequence_index,true)
+        if UI_SHIFT_PRESSED and not UI_ALT_PRESSED then
+            if NOTE_COLUMN_VIEW_POS + index - 1 < column_num and column_num < 12 then
+                -- insert after
+                local ix = NOTE_COLUMN_VIEW_POS + index - 1
+                rns:track(rns.selected_track_index).visible_note_columns = column_num + 1
+                for j = 1, rns.selected_pattern.number_of_lines do
+                    for i = column_num, ix+1, -1 do
+                        track:line(j):note_column(i+1):copy_from(track:line(j):note_column(i))
+                    end
+                    track:line(j):note_column(ix+1):clear()
+                end
+                if rns.selected_note_column_index > ix then
+                    rns.selected_note_column_index = rns.selected_note_column_index+1
+                    focus_note_column()                    
+                end
+            else
+                -- add at the end
+                rns:track(rns.selected_track_index).visible_note_columns = column_num + 1
+            end
+        elseif UI_ALT_PRESSED and not UI_SHIFT_PRESSED then
+            if NOTE_COLUMN_VIEW_POS + index - 1 <= column_num then
+                local ix = NOTE_COLUMN_VIEW_POS + index - 1
+                rns:track(rns.selected_track_index).visible_note_columns = column_num + 1
+                for j = 1, rns.selected_pattern.number_of_lines do
+                    track:line(j):note_column(ix):copy_from(track:line(j):note_column(rns.selected_note_column_index))
                 end
             end
-        else
+        elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED and NOTE_COLUMN_VIEW_POS + index - 1 <= column_num and column_num > 1 then
+            local ix = NOTE_COLUMN_VIEW_POS + index - 1
+            -- Check if it's possible to delete note_column
+            local is_empty = true
+            for pos,line in renoise.song().pattern_iterator:lines_in_track(rns.selected_track_index, true) do
+                if not line:note_column(ix).is_empty then 
+                    is_empty = false
+                    break
+                end
+            end
+            if is_empty then
+                for j = 1, rns.selected_pattern.number_of_lines do
+                    for i = ix, column_num-1 do
+                        track:line(j):note_column(i):copy_from(track:line(j):note_column(i+1))
+                    end
+                    track:line(j):note_column(column_num):clear()
+                end
+                rns:track(rns.selected_track_index).visible_note_columns = column_num - 1
+                if rns.selected_note_column_index > ix then
+                    rns.selected_note_column_index = rns.selected_note_column_index - 1
+                    focus_note_column()
+                end
+            else
+                for j = 1, rns.selected_pattern.number_of_lines do
+                    track:line(j):note_column(ix):clear()
+                end
+            end
+        elseif NOTE_COLUMN_VIEW_POS + index - 1 <= column_num then
             local start_line = 1
-            local start_track = row.track_index
-            local start_column = row.note_column_index
+            local start_track = rns.selected_track_index
+            local start_column = NOTE_COLUMN_VIEW_POS + index - 1
             local end_line = renoise.song().selected_pattern.number_of_lines
-            local end_track = row.track_index
-            local end_column = row.note_column_index
+            local end_track = rns.selected_track_index
+            local end_column = NOTE_COLUMN_VIEW_POS + index - 1
             local selection = renoise.song().selection_in_pattern
 
             -- expand end column if needed
@@ -1373,15 +1452,19 @@ function ui_row_select(index)
                 end_column = end_column,
                 end_track = end_track
             })
+
+            rns.selected_note_column_index = NOTE_COLUMN_VIEW_POS + index - 1
         end
     end
     mark_as_dirty()
 end
 
 function ui_note_press()
+    if UI_ALT_PRESSED then return end
     if UI_SHIFT_PRESSED then
         rns.transport.record_quantize_enabled = not rns.transport.record_quantize_enabled
-    else
+        ui_update_transport_buttons()
+    elseif rns:track(rns.selected_track_index).type == renoise.Track.TRACK_TYPE_SEQUENCER then
         MODE = MODE_NOTE
         renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
         ui_update_nav_buttons()
@@ -1390,9 +1473,11 @@ function ui_note_press()
 end
 
 function ui_drum_press()
+    if UI_ALT_PRESSED then return end
     if UI_SHIFT_PRESSED then
         rns.transport.loop_block_enabled = not rns.transport.loop_block_enabled
-    else
+        ui_update_transport_buttons()
+    elseif rns:track(rns.selected_track_index).type == renoise.Track.TRACK_TYPE_SEQUENCER then
         MODE = MODE_DRUM
         renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
         ui_update_nav_buttons()
@@ -1401,11 +1486,13 @@ function ui_drum_press()
 end
 
 function ui_perform_press()
+    if UI_ALT_PRESSED then return end
     if UI_SHIFT_PRESSED then
         renoise.app().window.upper_frame_is_visible = not renoise.app().window.upper_frame_is_visible
         if renoise.app().window.upper_frame_is_visible then
             renoise.app().window.active_upper_frame = renoise.ApplicationWindow.UPPER_FRAME_MASTER_SPECTRUM
         end
+        ui_update_transport_buttons()
     else
         MODE = MODE_PERFORM
         renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
@@ -1415,14 +1502,17 @@ function ui_perform_press()
 end
 
 function ui_song_press()
+    if UI_ALT_PRESSED then return end
     if UI_SHIFT_PRESSED then
         rns.transport.metronome_enabled = not rns.transport.metronome_enabled
     else
         rns.transport.loop_pattern = not rns.transport.loop_pattern
     end
+    ui_update_transport_buttons()
 end
 
 function ui_play_press()
+    if UI_ALT_PRESSED then return end
     if UI_SHIFT_PRESSED then
         rns.transport:start(renoise.Transport.PLAYMODE_RESTART_PATTERN)
     else
@@ -1431,16 +1521,20 @@ function ui_play_press()
 end
 
 function ui_stop_press()
+    if UI_ALT_PRESSED then return end
     if UI_SHIFT_PRESSED then
         rns.transport.metronome_precount_enabled = not rns.transport.metronome_precount_enabled
+        ui_update_transport_buttons()
     else
         rns.transport:stop()
     end
 end
 
 function ui_rec_press()
+    if UI_ALT_PRESSED then return end
     if UI_SHIFT_PRESSED then
         rns.transport.follow_player = not rns.transport.follow_player
+        ui_update_transport_buttons()
     else
         rns.transport.edit_mode = not rns.transport.edit_mode
     end
@@ -1449,42 +1543,40 @@ end
 function interpolate(volume, panning)
     if MODE == MODE_NOTE or MODE == MODE_DRUM then
         local line_count = renoise.song().selected_pattern.number_of_lines
+        local column_num = rns:track(rns.selected_track_index).visible_note_columns
         local selection = renoise.song().selection_in_pattern
-        for i = 1, #FLAT_ROWS do 
-            local row = FLAT_ROWS[i]
-            if row ~= nil then
-                local track_index = row.track_index
-                local note_column_index = row.note_column_index
-                local is_selected = is_selected_column(track_index, note_column_index, selection)
-                local track = renoise.song().selected_pattern.tracks[track_index]
-    
-                local start_line = selection.start_line
-                local end_line = selection.end_line
+        for i = 1, column_num do 
+            local track_index = rns.selected_track_index
+            local note_column_index = i
+            local is_selected = is_selected_column(track_index, note_column_index, selection)
+            local track = renoise.song().selected_pattern.tracks[track_index]
 
-                local len = end_line - start_line
+            local start_line = selection.start_line
+            local end_line = selection.end_line
 
-                local start_note = track:line(start_line):note_column(note_column_index)
-                local end_note = track:line(end_line):note_column(note_column_index)
+            local len = end_line - start_line
 
-                local int_volume = volume and start_note.volume_value < 128 and end_note.volume_value < 128
-                local int_panning = panning and start_note.panning_value < 128 and end_note.panning_value < 128
+            local start_note = track:line(start_line):note_column(note_column_index)
+            local end_note = track:line(end_line):note_column(note_column_index)
 
-                local start_volume = start_note.volume_value
-                local start_panning = start_note.panning_value
+            local int_volume = volume and start_note.volume_value < 128 and end_note.volume_value < 128
+            local int_panning = panning and start_note.panning_value < 128 and end_note.panning_value < 128
 
-                local end_volume = end_note.volume_value
-                local end_panning = end_note.panning_value
+            local start_volume = start_note.volume_value
+            local start_panning = start_note.panning_value
 
-                for j = 1, line_count do
-                    local line = track:line(j)
-                    local data = line.note_columns[note_column_index]
-                    if is_selected and is_selected_line(j, selection) then
-                        if int_volume then
-                            data.volume_value = start_volume + (end_volume-start_volume)/len*(j-start_line)
-                        end
-                        if int_panning then
-                            data.panning_value = start_panning + (end_panning-start_panning)/len*(j-start_line)
-                        end
+            local end_volume = end_note.volume_value
+            local end_panning = end_note.panning_value
+
+            for j = 1, line_count do
+                local line = track:line(j)
+                local data = line.note_columns[note_column_index]
+                if is_selected and is_selected_line(j, selection) then
+                    if int_volume then
+                        data.volume_value = start_volume + (end_volume-start_volume)/len*(j-start_line)
+                    end
+                    if int_panning then
+                        data.panning_value = start_panning + (end_panning-start_panning)/len*(j-start_line)
                     end
                 end
             end
@@ -1507,6 +1599,7 @@ function ui_knob1_touch()
         elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
             apply_to_selection(function(data) data.volume_string = '..' end)
         end
+        mark_as_dirty()
     end
 end
 
@@ -1517,6 +1610,7 @@ function ui_knob2_touch()
         elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
             apply_to_selection(function(data) data.panning_string = '..' end)
         end
+        mark_as_dirty()
     end
 end
 
@@ -1526,6 +1620,7 @@ function ui_knob3_touch()
         elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
             apply_to_selection(function(data) data.delay_string = '..' end)
         end
+        mark_as_dirty()
     end
 end
 
@@ -1534,15 +1629,87 @@ function ui_knob4_touch()
 end
 
 function ui_knob1(value)
+    if MODE == MODE_DRUM or MODE == MODE_NOTE and not UI_MODE_PRESSED then
+        apply_to_selection(function(data) 
+            local old_value = data.volume_value
+            if data.volume_string == '..' then
+                old_value = 0x7f
+            end
+            local new_value = math.min(math.max(old_value + value,0),0x7f)
+            data.volume_value = new_value
+        end)
+        mark_as_dirty()
+    elseif MODE == MODE_PERFORM and not UI_MODE_PRESSED then
+        local old_value = 200 * rns:track(rns.selected_track_index).postfx_volume.value
+        local new_value = math.min(math.max(old_value + value,0),200*1.4125375747681)
+        rns:track(rns.selected_track_index).postfx_volume.value = new_value/200
+        mark_as_dirty()
+    end
 end
 
 function ui_knob2(value)
+    if MODE == MODE_DRUM or MODE == MODE_NOTE and not UI_MODE_PRESSED then
+        apply_to_selection(function(data) 
+            local old_value = data.panning_value
+            if data.panning_string == '..' then
+                old_value = 0x40
+            end
+            local new_value = math.min(math.max(old_value + value,0),0x7f)
+            data.panning_value = new_value
+        end)
+        mark_as_dirty()
+    elseif MODE == MODE_PERFORM and not UI_MODE_PRESSED then
+        local old_value = 200 * rns:track(rns.selected_track_index).postfx_volume.value
+        local new_value = math.min(math.max(old_value + value,0),200)
+        rns:track(rns.selected_track_index).postfx_volume.value = new_value/200
+        mark_as_dirty()
+    end
 end
 
 function ui_knob3(value)
+    if MODE == MODE_DRUM or MODE == MODE_NOTE and not UI_MODE_PRESSED then
+        apply_to_selection(function(data) 
+            local old_value = data.delay_value
+            if data.delay_string == '..' then
+                old_value = 0
+            end
+            local new_value = math.min(math.max(old_value + value,0),0x7f)
+            data.delay_value = new_value
+        end)
+        mark_as_dirty()
+    end
 end
 
 function ui_knob4(value)
+    if MODE == MODE_DRUM or MODE == MODE_NOTE and not UI_MODE_PRESSED then
+        local old_color = rgb_to_hsv(rns:track(rns.selected_track_index).color)
+        local old_value = 256 * old_color[1]
+        local new_value = old_value + value
+        if new_value < 0 then
+            new_value = new_value + 256
+        elseif new_value > 256 then
+            new_value = new_value - 256
+        end
+        rns:track(rns.selected_track_index).color = hsv_to_rgb({new_value/256, 1.0, 1.0})
+        mark_as_dirty()
+    elseif MODE == MODE_PERFORM and not UI_MODE_PRESSED then
+        local cell = renoise.song():pattern(renoise.song().sequencer:pattern(rns.selected_sequence_index)):track(rns.selected_track_index)
+        local old_color
+        if cell.color == nil then
+            old_color = rgb_to_hsv(rns:track(rns.selected_track_index).color)
+        else
+            old_color = rgb_to_hsv(cell.color)
+        end
+        local old_value = 256 * old_color[1]
+        local new_value = old_value + value
+        if new_value < 0 then
+            new_value = new_value + 256
+        elseif new_value > 256 then
+            new_value = new_value - 256
+        end
+        cell.color = hsv_to_rgb({new_value/256, 1.0, 1.0})
+        mark_as_dirty()
+    end
 end
 
 function ui_select(value)
@@ -1553,146 +1720,183 @@ function ui_select(value)
     end
 end
 
-function ui_update_nav_buttons()
-    local seq_pos = renoise.song().selected_sequence_index
-    local seq_len = renoise.song().transport.song_length.sequence
-
-    -- grid prev/next
+function ui_update_note_buttons()
     if MODE == MODE_NOTE then
         midi_note(COLOR_YELLOW)
-        midi_drum(COLOR_OFF)
-        midi_perform(COLOR_OFF)
-        UI_NOTE_DEBUG.color = COLOR_YELLOW
-        UI_DRUM_DEBUG.color = COLOR_OFF
-        UI_PERFORM_DEBUG.color = COLOR_OFF
+        midi_drum(COLOR_YELLOW_LOW)
+        midi_perform(COLOR_YELLOW_LOW)
     elseif MODE == MODE_DRUM then
-        midi_note(COLOR_OFF)
+        midi_note(COLOR_YELLOW_LOW)
         midi_drum(COLOR_YELLOW)
-        midi_perform(COLOR_OFF)
-        UI_NOTE_DEBUG.color = COLOR_OFF
-        UI_DRUM_DEBUG.color = COLOR_YELLOW
-        UI_PERFORM_DEBUG.color = COLOR_OFF
-    elseif MODE == MODE_PERFORM then
-        midi_note(COLOR_OFF)
-        midi_drum(COLOR_OFF)
-        midi_perform(COLOR_YELLOW)
-        UI_NOTE_DEBUG.color = COLOR_OFF
-        UI_DRUM_DEBUG.color = COLOR_OFF
-        UI_PERFORM_DEBUG.color = COLOR_YELLOW
+        midi_perform(COLOR_YELLOW_LOW)
     end
 
-    if MODE == MODE_PERFORM then
-        if PERFORM_TRACK_VIEW_POS > 1 then
-            midi_grid_prev(COLOR_RED)
-            UI_GRID_PREV_DEBUG.color = COLOR_RED
-        else
-            midi_grid_prev(COLOR_OFF)
-            UI_GRID_PREV_DEBUG.color = COLOR_OFF
-        end
-        if PERFORM_TRACK_VIEW_POS + PAD_COLUMNS <= rns.sequencer_track_count then
-            midi_grid_next(COLOR_RED)
-            UI_GRID_NEXT_DEBUG.color = COLOR_RED
-        else
-            midi_grid_next(COLOR_OFF)
-            UI_GRID_NEXT_DEBUG.color = COLOR_OFF
-        end
-        if PERFORM_SEQUENCE_VIEW_POS > 1 then
-            midi_pattern_prev(COLOR_RED)
-            UI_PATTERN_PREV_DEBUG.color = COLOR_RED
+    if UI_SHIFT_PRESSED and not UI_ALT_PRESSED then
+        if rns.selected_track_index > 1 then
+            midi_pattern_prev(COLOR_RED_LOW)
         else
             midi_pattern_prev(COLOR_OFF)
-            UI_PATTERN_PREV_DEBUG.color = COLOR_OFF
         end
-        if PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS <= seq_len then
-            midi_pattern_next(COLOR_RED)
-            UI_PATTERN_NEXT_DEBUG.color = COLOR_RED
+        if rns.selected_track_index < rns.sequencer_track_count then
+            midi_pattern_next(COLOR_RED_LOW)
         else
             midi_pattern_next(COLOR_OFF)
-            UI_PATTERN_NEXT_DEBUG.color = COLOR_OFF
         end
-    elseif MODE == MODE_NOTE or MODE == MODE_DRUM then
+    elseif UI_ALT_PRESSED and not UI_SHIFT_PRESSED then
+        midi_pattern_prev(COLOR_RED_LOW)
+        midi_pattern_next(COLOR_RED_LOW)
+    elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
+        if rns.sequencer_track_count > 1 then
+            if rns.selected_track_index > 1 then
+                midi_pattern_prev(COLOR_RED_LOW)
+            else
+                midi_pattern_prev(COLOR_OFF)
+            end
+        if rns.selected_track_index < rns.sequencer_track_count then
+                midi_pattern_next(COLOR_RED_LOW)
+            else
+                midi_pattern_next(COLOR_OFF)
+            end
+        else
+            midi_pattern_prev(COLOR_OFF)
+            midi_pattern_next(COLOR_OFF)
+        end
+    else        
+        if NOTE_COLUMN_VIEW_POS > 1 then
+            midi_pattern_prev(COLOR_RED_LOW)
+        else
+            midi_pattern_prev(COLOR_OFF)
+        end
+        if NOTE_COLUMN_VIEW_POS < rns:track(rns.selected_track_index).visible_note_columns - PAD_ROWS + 1 then
+            midi_pattern_next(COLOR_RED_LOW)
+        else
+            midi_pattern_next(COLOR_OFF)
+        end
         if NOTE_STEP_VIEW_POS > 1 then
-            midi_grid_prev(COLOR_RED)
-            UI_GRID_PREV_DEBUG.color = COLOR_RED
+            midi_grid_prev(COLOR_RED_LOW)
         else
             midi_grid_prev(COLOR_OFF)
-            UI_GRID_PREV_DEBUG.color = COLOR_OFF
         end
-
         if NOTE_STEP_VIEW_POS + PAD_COLUMNS <= renoise.song().selected_pattern.number_of_lines then
-            midi_grid_next(COLOR_RED)
-            UI_GRID_NEXT_DEBUG.color = COLOR_RED
+            midi_grid_next(COLOR_RED_LOW)
         else
             midi_grid_next(COLOR_OFF)
-            UI_GRID_NEXT_DEBUG.color = COLOR_OFF
         end
-
-        if UI_SHIFT_PRESSED then
-            if seq_pos > 1 then
-                midi_pattern_prev(COLOR_RED)
-                UI_PATTERN_PREV_DEBUG.color = COLOR_RED
-            else
-                midi_pattern_prev(COLOR_OFF)
-                UI_PATTERN_PREV_DEBUG.color = COLOR_OFF
-            end
-
-            if seq_pos < seq_len then
-                midi_pattern_next(COLOR_RED)
-                UI_PATTERN_NEXT_DEBUG.color = COLOR_RED
-            else
-                midi_pattern_next(COLOR_OFF)
-                UI_PATTERN_NEXT_DEBUG.color = COLOR_OFF
-            end
-        else
-            if NOTE_COLUMN_VIEW_POS > 1 then
-                midi_pattern_prev(COLOR_RED)
-                UI_PATTERN_PREV_DEBUG.color = COLOR_RED
-            else
-                midi_pattern_prev(COLOR_OFF)
-                UI_PATTERN_PREV_DEBUG.color = COLOR_OFF
-            end
-
-            if NOTE_COLUMN_VIEW_POS < #FLAT_ROWS - PAD_ROWS + 1 then
-                midi_pattern_next(COLOR_RED)
-                UI_PATTERN_NEXT_DEBUG.color = COLOR_RED
-            else
-                midi_pattern_next(COLOR_OFF)
-                UI_PATTERN_NEXT_DEBUG.color = COLOR_OFF
-            end
-        end
-
---    elseif MODE == MODE_DRUM then
---        render_drum()
     end
 end
 
+function ui_update_perform_buttons()
+    local seq_pos = renoise.song().selected_sequence_index
+    local seq_len = renoise.song().transport.song_length.sequence
+
+    if rns:track(rns.selected_track_index).type == renoise.Track.TRACK_TYPE_SEQUENCER then
+        midi_note(COLOR_YELLOW_LOW)
+        midi_drum(COLOR_YELLOW_LOW)
+        else
+        midi_note(COLOR_OFF)
+        midi_drum(COLOR_OFF)
+        end
+    midi_perform(COLOR_YELLOW)
+
+    if PERFORM_TRACK_VIEW_POS > 1 then
+        midi_grid_prev(COLOR_RED_LOW)
+    else
+        midi_grid_prev(COLOR_OFF)
+    end
+    if PERFORM_TRACK_VIEW_POS + PAD_COLUMNS <= rns.sequencer_track_count then
+        midi_grid_next(COLOR_RED_LOW)
+    else
+        midi_grid_next(COLOR_OFF)
+    end
+    if PERFORM_SEQUENCE_VIEW_POS > 1 then
+        midi_pattern_prev(COLOR_RED_LOW)
+    else
+        midi_pattern_prev(COLOR_OFF)
+    end
+    if PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS <= seq_len then
+        midi_pattern_next(COLOR_RED_LOW)
+    else
+        midi_pattern_next(COLOR_OFF)
+    end
+
+end
+
+function ui_update_nav_buttons()
+    -- grid prev/next
+    if MODE == MODE_NOTE or MODE == MODE_DRUM then
+        ui_update_note_buttons()
+    elseif MODE == MODE_PERFORM then
+        ui_update_perform_buttons()
+    end
+
+    ui_update_transport_buttons()
+end
+
 function ui_update_transport_buttons()
-    if rns.transport.loop_pattern then
-        midi_song(COLOR_GREEN)
-        UI_SONG_DEBUG.color = COLOR_GREEN
-    else
-        midi_song(COLOR_YELLOW)
-        UI_SONG_DEBUG.color = COLOR_YELLOW
-    end
-
-    if rns.transport.playing then
-        midi_play(COLOR_GREEN)
-        midi_stop(COLOR_OFF)
-        UI_PLAY_DEBUG.color = COLOR_GREEN
-        UI_STOP_DEBUG.color = COLOR_OFF
-    else
-        midi_play(COLOR_OFF)
-        midi_stop(COLOR_YELLOW)
-        UI_PLAY_DEBUG.color = COLOR_OFF
-        UI_STOP_DEBUG.color = COLOR_YELLOW
-    end
-
-    if rns.transport.edit_mode then
-        midi_rec(COLOR_RED)
-        UI_REC_DEBUG.color = COLOR_RED
-    else
+    if UI_ALT_PRESSED then
         midi_rec(COLOR_OFF)
-        UI_REC_DEBUG.color = COLOR_OFF
+        midi_play(COLOR_OFF)
+        midi_stop(COLOR_OFF)
+        midi_song(COLOR_OFF)
+        midi_perform(COLOR_OFF)
+        midi_drum(COLOR_OFF)
+        midi_note(COLOR_OFF)
+    elseif UI_SHIFT_PRESSED then
+        if rns.transport.playing then
+            midi_play(COLOR_GREEN)
+        else
+            midi_play(COLOR_GREEN_LOW)
+        end
+        if rns.transport.follow_player then
+            midi_rec(COLOR_YELLOW)
+        else
+            midi_rec(COLOR_YELLOW_LOW)
+        end
+        if rns.transport.metronome_precount_enabled then
+            midi_stop(COLOR_YELLOW)
+        else
+            midi_stop(COLOR_YELLOW_LOW)
+        end
+        if rns.transport.metronome_enabled then
+            midi_song(COLOR_YELLOW)
+        else
+            midi_song(COLOR_YELLOW_LOW)
+        end
+        if renoise.app().window.upper_frame_is_visible then
+            midi_perform(COLOR_RED)
+        else
+            midi_perform(COLOR_RED_LOW)
+        end
+        if rns.transport.loop_block_enabled then
+            midi_drum(COLOR_RED)
+        else
+            midi_drum(COLOR_RED_LOW)
+        end
+        if rns.transport.record_quantize_enabled then
+            midi_note(COLOR_RED)
+        else
+            midi_note(COLOR_RED_LOW)
+        end
+    else
+        if rns.transport.loop_pattern then
+            midi_song(COLOR_GREEN_LOW)
+        else
+            midi_song(COLOR_GREEN)
+        end
+
+        if rns.transport.playing then
+            midi_play(COLOR_GREEN)
+            midi_stop(COLOR_YELLOW_LOW)
+        else
+            midi_play(COLOR_GREEN_LOW)
+            midi_stop(COLOR_YELLOW)
+        end
+
+        if rns.transport.edit_mode then
+            midi_rec(COLOR_RED)
+        else
+            midi_rec(COLOR_RED_LOW)
+        end
     end
 
     mark_as_dirty()
@@ -1701,34 +1905,26 @@ end
 function ui_update_state_buttons()
     if UI_BROWSE_PRESSED then
         midi_browse(COLOR_RED)
-        UI_BROWSE_DEBUG.color = COLOR_RED
     else
         midi_browse(COLOR_OFF)
-        UI_BROWSE_DEBUG.color = COLOR_OFF
     end
 
     if UI_STEP_PRESSED then
         midi_step(COLOR_YELLOW)
-        UI_STEP_DEBUG.color = COLOR_YELLOW
     else
         midi_step(COLOR_OFF)
-        UI_STEP_DEBUG.color = COLOR_OFF
     end
 
     if UI_SHIFT_PRESSED then
         midi_shift(COLOR_YELLOW)
-        UI_SHIFT_DEBUG.color = COLOR_YELLOW
     else
         midi_shift(COLOR_OFF)
-        UI_SHIFT_DEBUG.color = COLOR_OFF
     end
 
     if UI_ALT_PRESSED then
         midi_alt(COLOR_YELLOW)
-        UI_ALT_DEBUG.color = COLOR_YELLOW
     else
         midi_alt(COLOR_OFF)
-        UI_ALT_DEBUG.color = COLOR_OFF
     end
 end
 
@@ -2187,11 +2383,22 @@ function midi_init()
         end
     end
 
-    MIDI_IN = renoise.Midi.create_input_device('FL STUDIO FIRE', midi_callback)
-    MIDI_OUT = renoise.Midi.create_output_device('FL STUDIO FIRE')
+    if not ( renoise.Midi.devices_changed_observable():has_notifier(midi_connect) ) then
+        renoise.Midi.devices_changed_observable():add_notifier(midi_connect)
+    end
+    midi_connect()
+end
+
+function midi_connect()
+    if table.find(renoise.Midi.available_input_devices(),'FL STUDIO FIRE') ~= nil and table.find(renoise.Midi.available_output_devices(),'FL STUDIO FIRE') ~= nil then
+        MIDI_IN = renoise.Midi.create_input_device('FL STUDIO FIRE', midi_callback)
+        MIDI_OUT = renoise.Midi.create_output_device('FL STUDIO FIRE')
+    end
 end
 
 function midi_mode(value, extended)
+    UI_MODE_DEBUG.text = 'MODE:'..math.floor(value % 4)
+    if MIDI_OUT == nil then return end
     if not extended then
         MIDI_OUT:send {0xb0, 0x1b, math.floor(value % 4)}
     else
@@ -2200,70 +2407,104 @@ function midi_mode(value, extended)
 end
 
 function midi_pattern_prev(color)
+    UI_PATTERN_PREV_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x1f, get_color_index(color, true, false, false)}
 end
 
 function midi_pattern_next(color)
+    UI_PATTERN_NEXT_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x20, get_color_index(color, true, false, false)}
 end
 
 function midi_browse(color)
+    UI_BROWSE_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x21, get_color_index(color, true, false, false)}
 end
 
 function midi_grid_prev(color)
+    UI_GRID_PREV_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x22, get_color_index(color, true, false, false)}
 end
 
 function midi_grid_next(color)
+    UI_GRID_NEXT_DEBUG.color = color
+    if MIDI_OUT == nil then return end    
     MIDI_OUT:send {0xb0, 0x23, get_color_index(color, true, false, false)}
 end
 
 function midi_row(row, color)
+    ROW_SELECT_DEBUG[row].color = color
+    if MIDI_OUT == nil then return end    
     MIDI_OUT:send {0xb0, 0x24 + row - 1, get_color_index(color, false, false, true)}
 end
 
 function midi_indicator(row, color)
+    ROW_INDICATOR[row].color = color
+    if MIDI_OUT == nil then return end    
     MIDI_OUT:send {0xb0, 0x28 + row - 1, get_color_index(color, true, false, true)}
 end
 
 function midi_alt(color)
+    UI_ALT_DEBUG.color = color
+    if MIDI_OUT == nil then return end    
     MIDI_OUT:send {0xb0, 0x31, get_color_index(color,false,true,false)}
 end
 
 function midi_stop(color)
+    UI_STOP_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x34, get_color_index(color,false,true,false)}
 end
 
 function midi_step(color)
+    UI_STEP_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x2c, get_color_index(color,true,true,false)}
 end
 
 function midi_note(color)
+    UI_NOTE_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x2d, get_color_index(color,true,true,false)}
 end
 
 function midi_drum(color)
+    UI_DRUM_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x2e, get_color_index(color,true,true,false)}
 end
 
 function midi_perform(color)
+    UI_PERFORM_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x2f, get_color_index(color,true,true,false)}
 end
 
 function midi_shift(color)
+    UI_SHIFT_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x30, get_color_index(color,true,true,false)}
 end
 
 function midi_rec(color)
+    UI_REC_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x35, get_color_index(color,true,true,false)}
 end
 
 function midi_song(color)
+    UI_SONG_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x32, get_color_index(color,false,true,true)}
 end
 
 function midi_play(color)
+    UI_PLAY_DEBUG.color = color
+    if MIDI_OUT == nil then return end
     MIDI_OUT:send {0xb0, 0x33, get_color_index(color,false,true,true)}
 end
 
@@ -2272,6 +2513,7 @@ function midi_pad_start()
 end
 
 function midi_pad(array,row,column,color)
+    PADS_DEBUG[row][column].color = color
     local pos = #array+1
     array[pos] = (row-1)*16 + column - 1
     array[pos+1] = bit.rshift(color[1],1)
@@ -2280,6 +2522,7 @@ function midi_pad(array,row,column,color)
 end
 
 function midi_pad_end(array)
+    if MIDI_OUT == nil then return end
     local payload_len = #array - 7
     if payload_len == 0 then
         return
