@@ -1599,6 +1599,7 @@ function ui_knob1_touch()
         elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
             apply_to_selection(function(data) data.volume_string = '..' end)
         end
+        UI_PAD_PROCESSED = true
         mark_as_dirty()
     end
 end
@@ -1610,6 +1611,7 @@ function ui_knob2_touch()
         elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
             apply_to_selection(function(data) data.panning_string = '..' end)
         end
+        UI_PAD_PROCESSED = true
         mark_as_dirty()
     end
 end
@@ -1620,6 +1622,7 @@ function ui_knob3_touch()
         elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
             apply_to_selection(function(data) data.delay_string = '..' end)
         end
+        UI_PAD_PROCESSED = true
         mark_as_dirty()
     end
 end
@@ -1638,6 +1641,7 @@ function ui_knob1(value)
             local new_value = math.min(math.max(old_value + value,0),0x7f)
             data.volume_value = new_value
         end)
+        UI_PAD_PROCESSED = true
         mark_as_dirty()
     elseif MODE == MODE_PERFORM and not UI_MODE_PRESSED then
         local old_value = 200 * rns:track(rns.selected_track_index).postfx_volume.value
@@ -1657,6 +1661,7 @@ function ui_knob2(value)
             local new_value = math.min(math.max(old_value + value,0),0x7f)
             data.panning_value = new_value
         end)
+        UI_PAD_PROCESSED = true
         mark_as_dirty()
     elseif MODE == MODE_PERFORM and not UI_MODE_PRESSED then
         local old_value = 200 * rns:track(rns.selected_track_index).postfx_volume.value
@@ -1676,6 +1681,7 @@ function ui_knob3(value)
             local new_value = math.min(math.max(old_value + value,0),0x7f)
             data.delay_value = new_value
         end)
+        UI_PAD_PROCESSED = true
         mark_as_dirty()
     end
 end
@@ -1691,6 +1697,7 @@ function ui_knob4(value)
             new_value = new_value - 256
         end
         rns:track(rns.selected_track_index).color = hsv_to_rgb({new_value/256, 1.0, 1.0})
+        UI_PAD_PROCESSED = true
         mark_as_dirty()
     elseif MODE == MODE_PERFORM and not UI_MODE_PRESSED then
         local cell = renoise.song():pattern(renoise.song().sequencer:pattern(rns.selected_sequence_index)):track(rns.selected_track_index)
@@ -2393,6 +2400,32 @@ function midi_connect()
     if table.find(renoise.Midi.available_input_devices(),'FL STUDIO FIRE') ~= nil and table.find(renoise.Midi.available_output_devices(),'FL STUDIO FIRE') ~= nil then
         MIDI_IN = renoise.Midi.create_input_device('FL STUDIO FIRE', midi_callback)
         MIDI_OUT = renoise.Midi.create_output_device('FL STUDIO FIRE')
+
+        midi_rec(COLOR_OFF)
+        midi_play(COLOR_OFF)
+        midi_stop(COLOR_OFF)
+        midi_song(COLOR_OFF)
+        midi_perform(COLOR_OFF)
+        midi_drum(COLOR_OFF)
+        midi_note(COLOR_OFF)
+        midi_mode(0,true)
+        midi_pattern_prev(COLOR_OFF)
+        midi_pattern_next(COLOR_OFF)
+        midi_grid_prev(COLOR_OFF)
+        midi_grid_next(COLOR_OFF)
+        midi_shift(COLOR_OFF)
+        midi_alt(COLOR_OFF)
+        midi_step(COLOR_OFF)
+
+        local sysex = midi_pad_start()
+        for i = 1,PAD_ROWS do
+            midi_row(i,COLOR_OFF)
+            midi_indicator(i,COLOR_OFF)
+            for j = 1,PAD_COLUMNS do
+                midi_pad(sysex, i, j, COLOR_OFF)
+            end
+        end
+        midi_pad_end(sysex)
     end
 end
 
