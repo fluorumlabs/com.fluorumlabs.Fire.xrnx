@@ -1757,9 +1757,25 @@ function ui_update_note_buttons()
         else
             midi_pattern_next(COLOR_OFF)
         end
+        if NOTE_STEP_VIEW_POS > 1 then
+            midi_grid_prev(COLOR_RED_LOW)
+        else
+            midi_grid_prev(COLOR_OFF)
+        end
+        if NOTE_STEP_VIEW_POS + PAD_COLUMNS <= rns.selected_pattern.number_of_lines then
+            midi_grid_next(COLOR_RED_LOW)
+        else
+            midi_grid_next(COLOR_OFF)
+        end
     elseif UI_ALT_PRESSED and not UI_SHIFT_PRESSED then
         midi_pattern_prev(COLOR_RED_LOW)
         midi_pattern_next(COLOR_RED_LOW)
+        midi_grid_prev(COLOR_RED_LOW)
+        if NOTE_STEP_VIEW_POS + PAD_COLUMNS <= 512 then
+            midi_grid_next(COLOR_RED_LOW)
+        else
+            midi_grid_next(COLOR_OFF)
+        end
     elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
         if rns.sequencer_track_count > 1 then
             if rns.selected_track_index > 1 then
@@ -1775,6 +1791,16 @@ function ui_update_note_buttons()
         else
             midi_pattern_prev(COLOR_OFF)
             midi_pattern_next(COLOR_OFF)
+        end
+        if NOTE_STEP_VIEW_POS > 1 and rns.selected_pattern.number_of_lines > PAD_COLUMNS then
+            midi_grid_prev(COLOR_RED_LOW)
+        else
+            midi_grid_prev(COLOR_OFF)
+        end
+        if NOTE_STEP_VIEW_POS + PAD_COLUMNS <= rns.selected_pattern.number_of_lines and rns.selected_pattern.number_of_lines > PAD_COLUMNS then
+            midi_grid_next(COLOR_RED_LOW)
+        else
+            midi_grid_next(COLOR_OFF)
         end
     else        
         if NOTE_COLUMN_VIEW_POS > 1 then
