@@ -168,6 +168,7 @@ function rns_initialize()
     end
 
     idler()    
+    ui_update_state_buttons()
     ui_update_nav_buttons()
 end
 
