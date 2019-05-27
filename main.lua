@@ -1650,6 +1650,7 @@ end
 function ui_knob1(value)
     if UI_SHIFT_PRESSED and UI_ALT_PRESSED then return end
     if MODE == MODE_DRUM or MODE == MODE_NOTE and not UI_MODE_PRESSED then
+        rns.track(rns.selected_track_index).volume_column_visible = true
         apply_to_selection(function(data) 
             local old_value = data.volume_value
             if data.volume_string == '..' then
@@ -1671,6 +1672,7 @@ end
 function ui_knob2(value)
     if UI_SHIFT_PRESSED and UI_ALT_PRESSED then return end
     if MODE == MODE_DRUM or MODE == MODE_NOTE and not UI_MODE_PRESSED then
+        rns.track(rns.selected_track_index).panning_column_visible = true
         apply_to_selection(function(data) 
             local old_value = data.panning_value
             if data.panning_string == '..' then
@@ -1692,6 +1694,7 @@ end
 function ui_knob3(value)
     if UI_SHIFT_PRESSED and UI_ALT_PRESSED then return end
     if MODE == MODE_DRUM or MODE == MODE_NOTE and not UI_MODE_PRESSED then
+        rns.track(rns.selected_track_index).delay_column_visible = true
         apply_to_selection(function(data) 
             local old_value = data.delay_value
             if data.delay_string == '..' then
