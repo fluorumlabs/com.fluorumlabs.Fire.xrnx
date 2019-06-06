@@ -5,14 +5,14 @@ _xlibroot = 'xLib/classes/'
 _trace_filters = nil
 
 -- require some classes
-require (_clibroot..'cDebug')
+require(_clibroot .. 'cDebug')
 require (_xlibroot..'xLib')
 require (_xlibroot..'xPatternSequencer')
 
 rns = nil
 
-local MY_INTERFACE = nil
-local MY_INTERFACE_RACK = nil
+local MY_INTERFACE
+local MY_INTERFACE_RACK
 
 local MIDI_IN
 local MIDI_OUT
@@ -44,7 +44,7 @@ local NOTE_CURSOR_POS = 1
 local PERFORM_TRACK_VIEW_POS = 1
 local PERFORM_SEQUENCE_VIEW_POS = 1
 
-local CURRENT_PATTERN = nil
+local CURRENT_PATTERN
 local CURRENT_LINE = -1
 local CURRENT_SEQUENCE = -1
 local CURRENT_TRACK = -1
@@ -53,8 +53,6 @@ local PLAYBACK_LINE = -1
 local PLAYBACK_BEAT = -1
 local PLAYBACK_SEQUENCE = -1
 local PLAYBACK_NEXT_SEQUENCE = -1
-
-local CURRENT_ROW = 1
 
 local UI_MODE = 1
 local UI_MODE_PRESSED = false
@@ -68,8 +66,6 @@ local UI_KNOB4_DEBUG
 local UI_PAD_PRESSED_COUNT = 0
 local UI_PAD_PROCESSED = false
 
-local UI_SELECT_PRESSED = false
-
 local UI_BROWSE_PRESSED = false
 local UI_BROWSE_DEBUG
 
@@ -81,23 +77,16 @@ local UI_GRID_NEXT_DEBUG
 local UI_STEP_PRESSED = false
 local UI_STEP_PROCESSED = false
 local UI_STEP_DEBUG
-local UI_NOTE_PRESSED = false
 local UI_NOTE_DEBUG
-local UI_DRUM_PRESSED = false
 local UI_DRUM_DEBUG
-local UI_PERFORM_PRESSED = false
 local UI_PERFORM_DEBUG
 local UI_SHIFT_PRESSED = false
 local UI_SHIFT_DEBUG
 local UI_ALT_PRESSED = false
 local UI_ALT_DEBUG
-local UI_SONG_PRESSED = false
 local UI_SONG_DEBUG
-local UI_PLAY_PRESSED = false
 local UI_PLAY_DEBUG
-local UI_STOP_PRESSED = false
 local UI_STOP_DEBUG
-local UI_REC_PRESSED = false
 local UI_REC_DEBUG
 
 local QUEUE_RENDER = false
@@ -291,6 +280,8 @@ function render_debug()
                         hsv[3] = math.min(hsv[3], 1.0)
                     end
                 end
+                hsv[1] = math.floor(hsv[1]*12)/12;
+
                 midi_pad(sysex, r, c, hsv_to_rgb(hsv))
             end
         end
@@ -429,7 +420,7 @@ function render_overview()
             if rns:track(j).solo_state then
                 PADS[3][j-PERFORM_TRACK_VIEW_POS+1] = {0.4,1.0,1.0,false}
                 if rns:track(j).mute_state ~= renoise.Track.MUTE_STATE_ACTIVE then
-                    PADS[4][j-PERFORM_TRACK_VIEW_POS+1] = {0,1.0,0.5,false}
+                    PADS[4][j-PERFORM_TRACK_VIEW_POS+1] = {0,1.0,0.2,false}
                 else
                     PADS[4][j-PERFORM_TRACK_VIEW_POS+1] = {0,0,0,false}
                 end
@@ -453,8 +444,6 @@ end
 function render_note_cursor()
     local track_index = CURRENT_TRACK
     local note_column_index = CURRENT_NOTE_COLUMN
-
-    CURRENT_ROW = CURRENT_NOTE_COLUMN
 
     local new_step_pos = PLAYBACK_LINE - NOTE_STEP_VIEW_POS + 1
     if rns.selected_sequence_index ~= PLAYBACK_SEQUENCE or new_step_pos <= 0 or new_step_pos > PAD_COLUMNS then
@@ -493,24 +482,20 @@ function render_note()
 
     if MODE == MODE_NOTE or (MODE == MODE_DRUM and UI_STEP_PRESSED) then
         local prev_track = -1
-        for i = 1, NOTE_COLUMN_VIEW_POS + PAD_ROWS - 1 do 
-            if i <= column_num then
-                if last_note[i] == nil then
-                    last_note[i] = -1
-                end
-                for pos,line in rns.pattern_iterator:note_columns_in_pattern_track(rns.selected_pattern_index,rns.selected_track_index,true) do 
-                    if pos.line >= NOTE_STEP_VIEW_POS then 
-                        break
-                    end
-                    local note_value = line.note_value
-                    if note_value == 120 then 
-                        last_note[i+pos.column-1] = -1
-                        last_volume[i+pos.column-1] = 0
-                    elseif note_value < 120 then
-                        last_note[i+pos.column-1] = note_value % 12
-                        last_volume[i+pos.column-1] = line.volume_value
-                    end
-                end
+        for i = 1, column_num do 
+            last_note[i] = -1
+        end
+        for pos,line in rns.pattern_iterator:note_columns_in_pattern_track(rns.selected_pattern_index,rns.selected_track_index,true) do 
+            if pos.line >= NOTE_STEP_VIEW_POS then 
+                break
+            end
+            local note_value = line.note_value
+            if note_value == 120 then 
+                last_note[pos.column] = -1
+                last_volume[pos.column] = 0
+            elseif note_value < 120 then
+                last_note[pos.column] = note_value % 12
+                last_volume[pos.column] = line.volume_value
             end
         end
         for i = NOTE_COLUMN_VIEW_POS, NOTE_COLUMN_VIEW_POS + PAD_ROWS - 1 do 
@@ -808,7 +793,7 @@ function remap_selection(step_remap, row_remap)
 
             for j = 1, line_count do
                 local new_step_pos = j
-                if step_remap[j] ~= nil then
+                if new_note_column_index >= 1 and new_note_column_index <= note_column_len and step_remap[j] ~= nil then
                     new_step_pos = new_step_pos + step_remap[j]
                     local line = track:line(j)
                     local new_line = new_track:line(new_step_pos)
@@ -859,10 +844,21 @@ function ui_pad_press(row, column)
             if row == 1 then
                 rns.selected_track_index = track_ix
             elseif row == 3 then
-                rns:track(track_ix).solo_state = not rns:track(track_ix).solo_state
+                if UI_SHIFT_PRESSED then
+                    for i = 1, rns.sequencer_track_count do
+                        if i ~= track_ix then rns:track(i).solo_state = false end
+                    end
+                    rns:track(track_ix):solo()
+                else
+                    rns:track(track_ix):solo()
+                end
             elseif row == 4 then
                 if rns:track(track_ix).mute_state == renoise.Track.MUTE_STATE_ACTIVE then
-                    rns:track(track_ix).mute_state = renoise.Track.MUTE_STATE_OFF
+                    if UI_SHIFT_PRESSED then
+                        rns:track(track_ix).mute_state = renoise.Track.MUTE_STATE_MUTED
+                    else
+                        rns:track(track_ix).mute_state = renoise.Track.MUTE_STATE_OFF
+                    end
                 else
                     rns:track(track_ix).mute_state = renoise.Track.MUTE_STATE_ACTIVE
                 end
@@ -978,22 +974,12 @@ function ui_pad_press(row, column)
             }
             UI_PAD_PROCESSED = true
         elseif UI_ALT_PRESSED then
-            local selected_row = nil
             local selection = get_selection()
+            local selected_row = selection.start_column
             local row_remap = table.create()
             local column_num = rns:track(rns.selected_track_index).visible_note_columns
-            for i = 1, column_num do
-                if is_selected_column(rns.selected_track_index, i,selection) then
-                    if selected_row == nil then
-                        selected_row = i
-                    end
-                    if selected_row ~= nil then
-                        if i + row_ix - selected_row < 1 or i + row_ix - selected_row > column_num then
-                            return
-                        end
-                        row_remap[i] = row_ix - selected_row
-                    end
-                end
+            for i = selection.start_column, selection.end_column do
+                row_remap[i] = row_ix - selected_row
             end
             local step_diff = column_ix - selection.start_line
             local step_remap = table.create()
@@ -1768,9 +1754,9 @@ function ui_knob2(value)
         UI_PAD_PROCESSED = true
         mark_as_dirty()
     elseif (MODE == MODE_PERFORM or MODE == MODE_OVERVIEW) and not UI_MODE_PRESSED then
-        local old_value = 200 * rns:track(rns.selected_track_index).postfx_volume.value
+        local old_value = 200 * rns:track(rns.selected_track_index).postfx_panning.value
         local new_value = math.min(math.max(old_value + value,0),200)
-        rns:track(rns.selected_track_index).postfx_volume.value = new_value/200
+        rns:track(rns.selected_track_index).postfx_panning.value = new_value/200
         mark_as_dirty()
     end
 end
@@ -1808,7 +1794,7 @@ function ui_knob4(value)
         mark_as_dirty()
     elseif (MODE == MODE_PERFORM or MODE == MODE_OVERVIEW) and not UI_MODE_PRESSED then
         local cell = rns:track(rns.selected_track_index)
-        old_color = rgb_to_hsv(cell.color)
+        local old_color = rgb_to_hsv(cell.color)
 
         local old_value = 256 * old_color[1]
         local new_value = old_value + value
