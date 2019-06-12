@@ -282,12 +282,12 @@ function render_debug()
                     hsv[1] = 0
                     hsv[3] = 0
                     if hsv[4] then
-                        hsv[3] = 0.1
+                        hsv[2] = 0.5
                     end
                 else
                     if hsv[4] then
-                        hsv[3] = hsv[3] + 0.1
-                        hsv[3] = math.min(hsv[3], 1.0)
+                        hsv[2] = hsv[2] - 0.2
+                        hsv[2] = math.max(hsv[2], 0)
                     end
                 end
                 hsv[1] = math.floor(hsv[1] * 12) / 12;
@@ -368,19 +368,21 @@ function render_perform()
                     PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] = 0
                     PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
                     PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0
-                elseif i ~= PLAYBACK_SEQUENCE then
-                    PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.05
-                else
-                    PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.9
+                elseif i == PLAYBACK_SEQUENCE then
+                    PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.5
+                    PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
                     --if not is_alias then
                     --    PADS[i][j][3] = PADS[i][j][3] * 2
                     --end
                 end
                 if i == CURRENT_SEQUENCE and j == CURRENT_TRACK then
                     if PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
-                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.5
+                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
+                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
+                    else
+                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
+                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.5
                     end
-                    PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] + 0.05
                 end
             else
                 PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1] = { 0, 0, 0, false }
@@ -417,13 +419,15 @@ function render_overview()
                 PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
                 PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0
             else
-                PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.9
+                PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
             end
             if j == CURRENT_TRACK then
                 if PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
-                    PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.5
+                    PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.2
+                else
+                    PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
+                    PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.5
                 end
-                PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] + 0.05
             end
 
             PADS[2][j - PERFORM_TRACK_VIEW_POS + 1] = { 0, 0, 0, false }
@@ -579,7 +583,7 @@ function render_note_row(ix, last_note, last_volume)
                 pad[2] = 0.0
                 pad[3] = 0.0
                 if is_selected and is_selected_line(i, selection) then
-                    pad[3] = pad[3] + 0.05
+                    pad[3] = pad[3] + 0.2
                 end
             else
                 pad[1] = last_note / 12.0
@@ -592,14 +596,13 @@ function render_note_row(ix, last_note, last_volume)
                     end
                 else
                     if last_volume < 128 then
-                        pad[3] = 0.01 + 0.09 * last_volume / 256
+                        pad[3] = 0.1 + 0.4 * last_volume / 256
                     else
-                        pad[3] = 0.1
+                        pad[3] = 0.5
                     end
                 end
                 if is_selected and is_selected_line(i, selection) then
-                    pad[2] = 0.5
-                    pad[3] = pad[3] + 0.05
+                    pad[2] = 0.2
                 end
             end
         else
@@ -631,21 +634,20 @@ function render_drum_row(ix)
                 pad[2] = 0.0
                 pad[3] = 0.0
                 if is_selected and is_selected_line(i, selection) then
-                    pad[3] = pad[3] + 0.05
+                    pad[3] = pad[3] + 0.2
                 end
             else
                 pad[1] = color[1]
                 pad[2] = 1.0
 
                 if note_value < 120 and volume_value >= 128 then
-                    pad[3] = 0.9
+                    pad[3] = 1.0
                 elseif note_value < 120 then
-                    pad[3] = 0.1 + 0.8 * volume_value / 128
+                    pad[3] = 0.1 + 0.9 * volume_value / 128
                 end
 
                 if is_selected and is_selected_line(i, selection) then
-                    pad[2] = 0.5
-                    pad[3] = pad[3] + 0.05
+                    pad[2] = 0.2
                 end
             end
         else
@@ -1560,9 +1562,11 @@ function ui_note_press()
         ui_update_transport_buttons()
         mark_as_dirty()
     elseif rns:track(rns.selected_track_index).type == renoise.Track.TRACK_TYPE_SEQUENCER then
+        UI_BROWSE_PRESSED = false
         MODE = MODE_NOTE
         renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
         ui_update_nav_buttons()
+        ui_update_state_buttons()
         mark_as_dirty()
     end
 end
@@ -1572,12 +1576,16 @@ function ui_drum_press()
         return
     end
     if UI_SHIFT_PRESSED then
-        rns.transport.loop_block_enabled = not rns.transport.loop_block_enabled
-        ui_update_transport_buttons()
+        local new_loop_block_enabled = not rns.transport.loop_block_enabled
+        rns.transport.loop_block_enabled = new_loop_block_enabled
+        ui_update_transport_buttons(new_loop_block_enabled)
+        mark_as_dirty()
     elseif rns:track(rns.selected_track_index).type == renoise.Track.TRACK_TYPE_SEQUENCER then
+        UI_BROWSE_PRESSED = false
         MODE = MODE_DRUM
         renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
         ui_update_nav_buttons()
+        ui_update_state_buttons()
         mark_as_dirty()
     end
 end
@@ -1587,19 +1595,26 @@ function ui_perform_press()
         return
     end
     if UI_SHIFT_PRESSED then
+        UI_BROWSE_PRESSED = false
         MODE = MODE_OVERVIEW
         renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_MIXER
         ui_update_nav_buttons()
+        ui_update_state_buttons()
         mark_as_dirty()
+    elseif UI_BROWSE_PRESSED and (MODE == MODE_PERFORM or MODE == MODE_OVERVIEW) then
+        ui_browse_press()
     else
-        if MODE == MODE_PERFORM then
+        if MODE == MODE_PERFORM and not UI_BROWSE_PRESSED then
+            UI_BROWSE_PRESSED = false
             MODE = MODE_OVERVIEW
             renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_MIXER
         else
+            UI_BROWSE_PRESSED = false
             MODE = MODE_PERFORM
             renoise.app().window.active_middle_frame = renoise.ApplicationWindow.MIDDLE_FRAME_PATTERN_EDITOR
         end
         ui_update_nav_buttons()
+        ui_update_state_buttons()
         mark_as_dirty()
     end
 end
@@ -2028,7 +2043,7 @@ function ui_update_nav_buttons()
     ui_update_transport_buttons()
 end
 
-function ui_update_transport_buttons()
+function ui_update_transport_buttons(new_loop_block_enabled)
     if UI_ALT_PRESSED then
         midi_rec(COLOR_OFF)
         midi_play(COLOR_OFF)
@@ -2058,7 +2073,7 @@ function ui_update_transport_buttons()
         else
             midi_song(COLOR_OFF)
         end
-        if rns.transport.loop_block_enabled then
+        if (new_loop_block_enabled == nil and rns.transport.loop_block_enabled) or new_loop_block_enabled then
             midi_drum(COLOR_YELLOW)
         else
             midi_drum(COLOR_OFF)
@@ -2683,7 +2698,7 @@ function midi_mode(value)
 end
 
 function midi_pattern_prev(color)
-    UI_PATTERN_PREV_DEBUG.color = color
+    UI_PATTERN_PREV_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2691,7 +2706,7 @@ function midi_pattern_prev(color)
 end
 
 function midi_pattern_next(color)
-    UI_PATTERN_NEXT_DEBUG.color = color
+    UI_PATTERN_NEXT_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2699,7 +2714,7 @@ function midi_pattern_next(color)
 end
 
 function midi_browse(color)
-    UI_BROWSE_DEBUG.color = color
+    UI_BROWSE_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2707,7 +2722,7 @@ function midi_browse(color)
 end
 
 function midi_grid_prev(color)
-    UI_GRID_PREV_DEBUG.color = color
+    UI_GRID_PREV_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2715,7 +2730,7 @@ function midi_grid_prev(color)
 end
 
 function midi_grid_next(color)
-    UI_GRID_NEXT_DEBUG.color = color
+    UI_GRID_NEXT_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2723,7 +2738,7 @@ function midi_grid_next(color)
 end
 
 function midi_row(row, color)
-    ROW_SELECT_DEBUG[row].color = color
+    ROW_SELECT_DEBUG[row].color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2731,7 +2746,7 @@ function midi_row(row, color)
 end
 
 function midi_indicator(row, color)
-    ROW_INDICATOR[row].color = color
+    ROW_INDICATOR[row].color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2739,7 +2754,7 @@ function midi_indicator(row, color)
 end
 
 function midi_alt(color)
-    UI_ALT_DEBUG.color = color
+    UI_ALT_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2747,7 +2762,7 @@ function midi_alt(color)
 end
 
 function midi_stop(color)
-    UI_STOP_DEBUG.color = color
+    UI_STOP_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2755,7 +2770,7 @@ function midi_stop(color)
 end
 
 function midi_step(color)
-    UI_STEP_DEBUG.color = color
+    UI_STEP_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2763,7 +2778,7 @@ function midi_step(color)
 end
 
 function midi_note(color)
-    UI_NOTE_DEBUG.color = color
+    UI_NOTE_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2771,7 +2786,7 @@ function midi_note(color)
 end
 
 function midi_drum(color)
-    UI_DRUM_DEBUG.color = color
+    UI_DRUM_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2779,7 +2794,7 @@ function midi_drum(color)
 end
 
 function midi_perform(color)
-    UI_PERFORM_DEBUG.color = color
+    UI_PERFORM_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2787,7 +2802,7 @@ function midi_perform(color)
 end
 
 function midi_shift(color)
-    UI_SHIFT_DEBUG.color = color
+    UI_SHIFT_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2795,7 +2810,7 @@ function midi_shift(color)
 end
 
 function midi_rec(color)
-    UI_REC_DEBUG.color = color
+    UI_REC_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2803,7 +2818,7 @@ function midi_rec(color)
 end
 
 function midi_song(color)
-    UI_SONG_DEBUG.color = color
+    UI_SONG_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2811,7 +2826,7 @@ function midi_song(color)
 end
 
 function midi_play(color)
-    UI_PLAY_DEBUG.color = color
+    UI_PLAY_DEBUG.color = black(color)
     if MIDI_OUT == nil then
         return
     end
@@ -2823,7 +2838,7 @@ function midi_pad_start()
 end
 
 function midi_pad(array, row, column, color)
-    PADS_DEBUG[row][column].color = color
+    PADS_DEBUG[row][column].color = black(color)
     local pos = #array + 1
     array[pos] = (row - 1) * 16 + column - 1
     array[pos + 1] = bit.rshift(color[1], 1)
@@ -2866,6 +2881,14 @@ function midi_callback(message)
             handler(value)
         end
     end
+end
+
+function black(color)
+    return {
+        math.min(255, color[1]+1),
+        math.min(255, color[2]+1),
+        math.min(255, color[3]+1)
+    }
 end
 
 function midi_configure()
