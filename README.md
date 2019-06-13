@@ -13,10 +13,11 @@ This tool allows to use AKAI Fire FL Studio controller with Renoise tracker. It 
 
 # Features
 
-- Mode LEDs show beat position in binary format: `CHANNEL` toggles every beat, `MIXER` toggles every two beats, `USER 1` - every 8 beats and `USER 2` - every 16 beats.
+- Mode LEDs show beat position within pattern in binary format: `CHANNEL` toggles every 1/16 of pattern, `MIXER` toggles every 1/8, `USER 1` - every 1/4 and `USER 2` - every 1/2.
 - Pad color in Note mode (or in Drum mode with `STEP` held) represents note (12 semitones of octave mapped to a hue); active notes (not stopped by note-offs) are showed in a dim color
 - Pad color in Drum mode represents track color
-- Pad color in Performance mode represents track/slot color; muted slots are showed in a dim color
+- Pad color in Performance mode represents track color
+- Pad color in Overview mode: 1st row: current pattern, 3rd row: solo state, 4th row: mute state
 - Tapping pad in Drum mode captures the nearest note/instrument before of after tapped position
 - Both live loop recording and stepped recording are supported (set step size with `STEP`+`⟲/⟳ SELECT` and use `STEP`/`SHIFT`+`STEP` to skip steps)
 
@@ -40,7 +41,8 @@ Combination | Function
 ----------- | --------
 `NOTE` | Switch to note step editor (see [Note/Drum Mode Shortcuts]())
 `DRUM` | Switch to pattern (see [Note/Drum Mode Shortcuts]())
-`PERFORM` | Switch to pattern matrix mode (see [Performance Mode Shortcuts]())
+`PERFORM` | Cycle between pattern matrix mode (see [Performance Mode Shortcuts]()) and mixer mide (see [Overview Mode Shortcuts]())
+`BROWSE` | Activate instrument selection panel (see [Browser Shortcuts]())
 
 ### Miscellaneus
 
@@ -52,7 +54,6 @@ _`OVERVIEW`_ a.k.a. `SHIFT`+`PERFORM` | Show/hide spectrum analyzer
 _`METRONOME`_ a.k.a. `SHIFT`+`PATTERN/SONG` | Switch "Metronome" on/off
 _`COUNTDOWN`_ a.k.a. `SHIFT`+`STOP` | Switch "Metronome pre-count" on/off
 _`LOOP REC`_ a.k.a. `SHIFT`+`REC` | Switch "Follow player" on/off
-`BROWSER` | Show/hide instrument selection panel (see [Browser Shortcuts]())
 `MODE`+`⟲ SELECT` | Undo
 `MODE`+`⟳ SELECT` | Redo
 
@@ -81,7 +82,7 @@ Combination | Function
 `SHIFT`+`ALT`+`▼ PATTERN` | Delete current track and select next
 `SHIFT`+`*MUTE*` | Add new note column
 `ALT`+`*MUTE*` | Duplicate note column
-`SHIFT`+`ALT`+`*MUTE*` | Delete note column
+`SHIFT`+`ALT`+`*MUTE*` | Clear note column or delete if it's empty throughout the whole song
 `STEP` | Move cursor to next step in pattern editor
 `SHIFT`+`STEP` | Move cursor to previous step in pattern editor
 `STEP`+`⟲/⟳ SELECT` | Change step size
@@ -93,8 +94,7 @@ Combination | Function
 `*PAD*` | Select note column line in pattern (also set/clear step in Drum Mode)
 `*PAD*`+`*PAD*` | Select block in pattern
 `SHIFT`+`*PAD*` | Select block in pattern, starting at previously selected note column line
-`*MUTE*` | Select whole note column
-`2× *MUTE*` | Select whole track
+`*MUTE*` | Select whole note column or whole track
 
 ### Editing
 
@@ -119,10 +119,10 @@ Combination | Function
 `SHIFT`+`⟲/⟳ SELECT` | Move selected block forward/backward, or rotate, if whole pattern is selected
 `SHIFT`+`▶ GRID` | Shift page content (16 steps) to next page
 `SHIFT`+`◀ GRID` | Shift page content (16 steps) to previous page
-`ALT`+`▶ GRID` | Duplicate page content (16 steps) to next page, expanding pattern if needed
-`ALT`+`◀ GRID` | Duplicate page content (16 steps) to previous page, expanding pattern if needed
-`SHIFT`+`ALT`+`▶ GRID` | Delete current page (16 steps) and select next page, shortening pattern
-`SHIFT`+`ALT`+`◀ GRID` | Delete current page (16 steps) and select previous page, shortening pattern
+`ALT`+`▶ GRID` | Duplicate page content (16 steps) to next page
+`ALT`+`◀ GRID` | Duplicate page content (16 steps) to previous page
+`SHIFT`+`ALT`+`▶ GRID` | Clear current page (16 steps) and select next
+`SHIFT`+`ALT`+`◀ GRID` | Clear current page (16 steps) and select previous
 
 ### Miscellaneous
 
@@ -153,7 +153,7 @@ Combination | Function
 `SHIFT`+`ALT`+`*PAD*` | Clear slot
 `⟲/⟳ VOLUME` | Adjust mixer volume for selected track
 `⟲/⟳ PANNING` | Adjust mixer panning for selected track
-`⟲/⟳ RESONANCE` | Adjust hue color for selected slot
+`⟲/⟳ RESONANCE` | Adjust hue color for selected track
 `SHIFT`+`*MUTE*` | Add new pattern to sequence
 `ALT`+`*MUTE*` | Duplicate pattern in sequence
 `SHIFT`+`ALT`+`*MUTE*` | Delete pattern from sequence
@@ -165,3 +165,13 @@ Combination | Function
 `*MUTE*` | Schedule pattern/start playback if stopped
 `STEP`+`*MUTE*` | Switch to pattern immediately
 `STEP`+`*PAD*` | Mute/unmute slot
+
+## Overview Mode Shortcuts
+Combination | Function
+----------- | --------
+`*PAD*` (1st row) | Select slot
+`*PAD*` (3rd row) | Toggle track solo
+`*PAD*` (4th row) | Toggle track mute
+`⟲/⟳ VOLUME` | Adjust mixer volume for selected track
+`⟲/⟳ PANNING` | Adjust mixer panning for selected track
+`⟲/⟳ RESONANCE` | Adjust hue color for selected track

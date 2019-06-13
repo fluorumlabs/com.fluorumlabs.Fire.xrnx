@@ -374,6 +374,10 @@ function render_perform()
                     --if not is_alias then
                     --    PADS[i][j][3] = PADS[i][j][3] * 2
                     --end
+                else
+                    if PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
+                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.2
+                    end
                 end
                 if i == CURRENT_SEQUENCE and j == CURRENT_TRACK then
                     if PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
@@ -596,13 +600,13 @@ function render_note_row(ix, last_note, last_volume)
                     end
                 else
                     if last_volume < 128 then
-                        pad[3] = 0.1 + 0.4 * last_volume / 256
+                        pad[3] = 0.1 + 0.1 * last_volume / 256
                     else
-                        pad[3] = 0.5
+                        pad[3] = 0.2
                     end
                 end
                 if is_selected and is_selected_line(i, selection) then
-                    pad[2] = 0.2
+                    pad[2] = 0.5
                 end
             end
         else
