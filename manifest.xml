@@ -2,7 +2,7 @@
 <RenoiseScriptingTool doc_version="0">
   <Name>AKAI Fire Integration</Name>
   <Id>com.fluorumlabs.Fire</Id>
-  <Version>1</Version>
+  <Version>1.1</Version>
   <ApiVersion>5</ApiVersion>
   <Author>Artem Godin [artem.godin@gmail.com]</Author>
   <AutoUpgraded>false</AutoUpgraded>

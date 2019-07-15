@@ -375,8 +375,21 @@ function render_perform()
                     --    PADS[i][j][3] = PADS[i][j][3] * 2
                     --end
                 else
-                    if PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
-                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.2
+                    if i == PLAYBACK_SEQUENCE then
+                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.5
+                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
+                        --if not is_alias then
+                        --    PADS[i][j][3] = PADS[i][j][3] * 2
+                        --end
+                    else
+                        if PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
+                            if rns.sequencer:track_sequence_slot_is_muted(j - PERFORM_TRACK_VIEW_POS + 1, i - PERFORM_SEQUENCE_VIEW_POS + 1) then
+                                PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.2
+                            else
+                                PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.2
+                            end
+
+                        end
                     end
                 end
                 if i == CURRENT_SEQUENCE and j == CURRENT_TRACK then
@@ -1331,7 +1344,7 @@ function ui_select_prev()
     elseif MODE == MODE_PERFORM then
         if PERFORM_SEQUENCE_VIEW_POS > 1 then
             PERFORM_SEQUENCE_VIEW_POS = PERFORM_SEQUENCE_VIEW_POS - 1
-            rns.sequencer.selection_range = { PERFORM_SEQUENCE_VIEW_POS, PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS - 1 }
+            rns.sequencer.selection_range = { math.max(1,PERFORM_SEQUENCE_VIEW_POS), math.min(PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS - 1, #rns.sequencer.pattern_sequence) }
             ui_update_nav_buttons()
             mark_as_dirty()
         end
