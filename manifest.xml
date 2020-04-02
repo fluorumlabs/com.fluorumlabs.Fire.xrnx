@@ -1,14 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <RenoiseScriptingTool doc_version="0">
-  <Name>AKAI Fire Integration</Name>
-  <Id>com.fluorumlabs.Fire</Id>
-  <Version>1.1</Version>
-  <ApiVersion>5</ApiVersion>
-  <Author>Artem Godin [artem.godin@gmail.com]</Author>
+  <ApiVersion>6</ApiVersion>
   <AutoUpgraded>false</AutoUpgraded>
+  <Id>com.fluorumlabs.Fire</Id>
+  <Version>1.2</Version>
+  <Author>Artem Godin [artem.godin@gmail.com]</Author>
+  <Name>AKAI Fire Integration</Name>
   <Category>MIDI</Category>
   <Description>This tool allows to use AKAI Fire FL Studio controller with Renoise tracker. It packs quite a lot of no-nonsense Renoise features to be available at your fingertips. Note: I made it for myself, so it may or may not suit your tracking style ;)</Description>
   <Homepage>https://github.com/fluorumlabs/com.fluorumlabs.Fire.xrnx</Homepage>
-  <Platform/>
-  <Icon/>
 </RenoiseScriptingTool>

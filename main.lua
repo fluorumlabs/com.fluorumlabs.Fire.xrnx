@@ -6,6 +6,7 @@ _trace_filters = nil
 
 -- require some classes
 require(_clibroot .. 'cDebug')
+require(_clibroot .. 'cLib')
 require(_xlibroot .. 'xLib')
 require(_xlibroot .. 'xPatternSequencer')
 
@@ -20,7 +21,7 @@ local MIDI_OUT
 local OPTIONS = renoise.Document.create("ScriptingToolPreferences") {
     MidiInput = "FL STUDIO FIRE",
     MidiOutput = "FL STUDIO FIRE",
-    DevelopmentMode = false,
+    DevelopmentMode = false
 }
 
 renoise.tool().preferences = OPTIONS
@@ -52,6 +53,7 @@ local NOTE_STEP_VIEW_POS = 1
 local NOTE_COLUMN_VIEW_POS = 1
 local NOTE_CURSOR_POS = 1
 
+local PERFORM_HIDE_CURSOR = false
 local PERFORM_TRACK_VIEW_POS = 1
 local PERFORM_SEQUENCE_VIEW_POS = 1
 
@@ -87,6 +89,7 @@ local UI_GRID_PREV_DEBUG
 local UI_GRID_NEXT_DEBUG
 
 local UI_STEP_PRESSED = false
+local UI_STEP_LOCK = false
 local UI_STEP_PROCESSED = false
 local UI_STEP_DEBUG
 local UI_NOTE_DEBUG
@@ -244,7 +247,6 @@ function idler(_)
         end
         render_debug()
     end
-
 end
 
 function render()
@@ -282,12 +284,14 @@ function render_debug()
                     hsv[1] = 0
                     hsv[3] = 0
                     if hsv[4] then
-                        hsv[2] = 0.5
+                        hsv[2] = 0
+                        hsv[3] = 0.2
                     end
                 else
                     if hsv[4] then
                         hsv[2] = hsv[2] - 0.2
                         hsv[2] = math.max(hsv[2], 0)
+                        hsv[3] = math.min(hsv[3] + 0.2, 1.0)
                     end
                 end
                 hsv[1] = math.floor(hsv[1] * 12) / 12;
@@ -368,38 +372,31 @@ function render_perform()
                     PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] = 0
                     PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
                     PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0
-                elseif i == PLAYBACK_SEQUENCE then
-                    PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.5
-                    PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
+
+                    if i == PLAYBACK_SEQUENCE then
+                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.1
+                    end
+                else
+                    --PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
                     --if not is_alias then
                     --    PADS[i][j][3] = PADS[i][j][3] * 2
                     --end
-                else
-                    if i == PLAYBACK_SEQUENCE then
-                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.5
-                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
-                        --if not is_alias then
-                        --    PADS[i][j][3] = PADS[i][j][3] * 2
-                        --end
-                    else
-                        if PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
-                            if rns.sequencer:track_sequence_slot_is_muted(j - PERFORM_TRACK_VIEW_POS + 1, i - PERFORM_SEQUENCE_VIEW_POS + 1) then
-                                PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.2
-                            else
-                                PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.2
-                            end
-
+                    if PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
+                        if rns.sequencer:track_sequence_slot_is_muted(j, i) then
+                            PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.7
+                            PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.2
+                        else
+                            PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1
                         end
+
                     end
                 end
-                if i == CURRENT_SEQUENCE and j == CURRENT_TRACK then
-                    if PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
-                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
-                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
-                    else
-                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
-                        PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.5
-                    end
+                if i == CURRENT_SEQUENCE and j == CURRENT_TRACK and not PERFORM_HIDE_CURSOR and not ((UI_STEP_PRESSED
+                        and not UI_STEP_LOCK)
+                        or (not
+                UI_STEP_PRESSED and UI_STEP_LOCK)) then
+                    PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
+                    PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1
                 end
             else
                 PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1] = { 0, 0, 0, false }
@@ -436,15 +433,23 @@ function render_overview()
                 PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
                 PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0
             else
-                PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
-            end
-            if j == CURRENT_TRACK then
+                --PADS[i - PERFORM_SEQUENCE_VIEW_POS + 1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1.0
+                --if not is_alias then
+                --    PADS[i][j][3] = PADS[i][j][3] * 2
+                --end
                 if PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][1] ~= 0 or PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] ~= 0 then
-                    PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.2
-                else
-                    PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
-                    PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.5
+                    if rns.sequencer:track_sequence_slot_is_muted(j, PLAYBACK_SEQUENCE) then
+                        PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0.7
+                        PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 0.2
+                    else
+                        PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1
+                    end
                 end
+            end
+            if j == CURRENT_TRACK and not ((UI_STEP_PRESSED and not UI_STEP_LOCK) or (not UI_STEP_PRESSED and
+                    UI_STEP_LOCK)) then
+                PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][2] = 0
+                PADS[1][j - PERFORM_TRACK_VIEW_POS + 1][3] = 1
             end
 
             PADS[2][j - PERFORM_TRACK_VIEW_POS + 1] = { 0, 0, 0, false }
@@ -494,7 +499,7 @@ function render_note_cursor()
         if NOTE_CURSOR_POS > 0 then
             PADS[i][NOTE_CURSOR_POS][4] = false
         end
-        if new_step_pos > 0 and NOTE_COLUMN_VIEW_POS + i - 1 <= rns:track(rns.selected_track_index).visible_note_columns then
+        if new_step_pos > 0 then
             PADS[i][new_step_pos][4] = true
         end
     end
@@ -879,7 +884,12 @@ function ui_pad_press(row, column)
         local track_ix = PERFORM_TRACK_VIEW_POS + column - 1
         if track_ix >= 1 and track_ix <= rns.sequencer_track_count then
             if row == 1 then
-                rns.selected_track_index = track_ix
+                if ((UI_STEP_PRESSED and not UI_STEP_LOCK) or (not UI_STEP_PRESSED and UI_STEP_LOCK)) then
+                    rns.sequencer:set_track_sequence_slot_is_muted(track_ix, PLAYBACK_SEQUENCE, not rns
+                            .sequencer:track_sequence_slot_is_muted(track_ix, PLAYBACK_SEQUENCE))
+                else
+                    rns.selected_track_index = track_ix
+                end
             elseif row == 3 then
                 if UI_SHIFT_PRESSED then
                     for i = 1, rns.sequencer_track_count do
@@ -921,7 +931,7 @@ function ui_pad_press(row, column)
                 rns.selected_sequence_index = seq_ix
                 rns.selected_track_index = track_ix
                 mark_as_dirty()
-            elseif UI_STEP_PRESSED then
+            elseif ((UI_STEP_PRESSED and not UI_STEP_LOCK) or (not UI_STEP_PRESSED and UI_STEP_LOCK)) then
                 rns.sequencer:set_track_sequence_slot_is_muted(track_ix, seq_ix, not rns.sequencer:track_sequence_slot_is_muted(track_ix, seq_ix))
                 mark_as_dirty()
             elseif UI_ALT_PRESSED and UI_SHIFT_PRESSED then
@@ -1062,6 +1072,10 @@ function ui_pad_release(row, column)
 end
 
 function ui_step_press()
+    if (MODE == MODE_PERFORM or MODE == MODE_OVERVIEW) and UI_SHIFT_PRESSED then
+        UI_STEP_LOCK = not UI_STEP_LOCK
+    end
+
     UI_STEP_PRESSED = true
     UI_STEP_PROCESSED = false
     ui_update_nav_buttons()
@@ -1118,6 +1132,7 @@ end
 
 function ui_alt_release()
     UI_ALT_PRESSED = false
+    PERFORM_HIDE_CURSOR = false
     ui_update_nav_buttons()
     ui_update_state_buttons()
 end
@@ -1344,7 +1359,7 @@ function ui_select_prev()
     elseif MODE == MODE_PERFORM then
         if PERFORM_SEQUENCE_VIEW_POS > 1 then
             PERFORM_SEQUENCE_VIEW_POS = PERFORM_SEQUENCE_VIEW_POS - 1
-            rns.sequencer.selection_range = { math.max(1,PERFORM_SEQUENCE_VIEW_POS), math.min(PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS - 1, #rns.sequencer.pattern_sequence) }
+            rns.sequencer.selection_range = { math.max(1, PERFORM_SEQUENCE_VIEW_POS), math.min(PERFORM_SEQUENCE_VIEW_POS + PAD_ROWS - 1, #rns.sequencer.pattern_sequence) }
             ui_update_nav_buttons()
             mark_as_dirty()
         end
@@ -1438,33 +1453,33 @@ function ui_row_select(index)
     elseif MODE == MODE_PERFORM then
         local seq_ix = PERFORM_SEQUENCE_VIEW_POS + index - 1
         if seq_ix >= 1 and seq_ix <= #rns.sequencer.pattern_sequence then
-            if not UI_SHIFT_PRESSED and not UI_ALT_PRESSED and not UI_STEP_PRESSED then
+            if not UI_SHIFT_PRESSED and not UI_ALT_PRESSED and not ((UI_STEP_PRESSED and not UI_STEP_LOCK) or (not UI_STEP_PRESSED and UI_STEP_LOCK)) then
                 rns.transport:set_scheduled_sequence(seq_ix)
                 PLAYBACK_NEXT_SEQUENCE = seq_ix
                 mark_as_dirty()
-            elseif not UI_SHIFT_PRESSED and not UI_ALT_PRESSED and UI_STEP_PRESSED then
+            elseif not UI_SHIFT_PRESSED and not UI_ALT_PRESSED and ((UI_STEP_PRESSED and not UI_STEP_LOCK) or (not UI_STEP_PRESSED and UI_STEP_LOCK)) then
                 local songpos = rns.transport.playback_pos
                 songpos.sequence = seq_ix
                 xPatternSequencer.switch_to_sequence(songpos)
                 mark_as_dirty()
-            elseif UI_SHIFT_PRESSED and not UI_ALT_PRESSED and not UI_STEP_PRESSED then
+            elseif UI_SHIFT_PRESSED and not UI_ALT_PRESSED then
                 if seq_ix < PLAYBACK_NEXT_SEQUENCE then
                     PLAYBACK_NEXT_SEQUENCE = PLAYBACK_NEXT_SEQUENCE + 1
                 end
-                rns.sequencer:insert_new_pattern_at(seq_ix + 1)
-                local target = rns:pattern(rns.sequencer:pattern(seq_ix + 1))
+                rns.sequencer:insert_new_pattern_at(seq_ix)
+                local target = rns:pattern(rns.sequencer:pattern(seq_ix))
                 target:clear()
                 mark_as_dirty()
-            elseif not UI_SHIFT_PRESSED and UI_ALT_PRESSED and not UI_STEP_PRESSED then
+            elseif not UI_SHIFT_PRESSED and UI_ALT_PRESSED then
                 if seq_ix < PLAYBACK_NEXT_SEQUENCE then
                     PLAYBACK_NEXT_SEQUENCE = PLAYBACK_NEXT_SEQUENCE + 1
                 end
                 local source = rns:pattern(rns.sequencer:pattern(seq_ix))
-                rns.sequencer:insert_new_pattern_at(seq_ix + 1)
-                local target = rns:pattern(rns.sequencer:pattern(seq_ix + 1))
+                rns.sequencer:insert_new_pattern_at(seq_ix)
+                local target = rns:pattern(rns.sequencer:pattern(seq_ix))
                 target:copy_from(source)
                 mark_as_dirty()
-            elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED and not UI_STEP_PRESSED then
+            elseif UI_SHIFT_PRESSED and UI_ALT_PRESSED then
                 if seq_ix == PLAYBACK_NEXT_SEQUENCE then
                     PLAYBACK_NEXT_SEQUENCE = -1
                 elseif seq_ix < PLAYBACK_NEXT_SEQUENCE then
@@ -1702,6 +1717,10 @@ function interpolate(volume, panning)
 
             local len = end_line - start_line
 
+            if len == 0 then
+                return
+            end
+
             local start_note = track:line(start_line):note_column(note_column_index)
             local end_note = track:line(end_line):note_column(note_column_index)
 
@@ -1780,7 +1799,11 @@ function ui_knob3_touch()
 end
 
 function ui_knob4_touch()
-    -- noop
+    if UI_ALT_PRESSED and UI_SHIFT_PRESSED and (MODE == MODE_OVERVIEW or MODE==MODE_PERFORM) then
+        PERFORM_HIDE_CURSOR = true
+        rns:pattern(rns.selected_pattern_index):track(rns.selected_track_index).color = nil
+        mark_as_dirty()
+    end
 end
 
 function ui_knob1(value)
@@ -1851,7 +1874,7 @@ function ui_knob3(value)
 end
 
 function ui_knob4(value)
-    if UI_SHIFT_PRESSED and UI_ALT_PRESSED then
+    if UI_SHIFT_PRESSED and (UI_ALT_PRESSED and (MODE == MODE_DRUM or MODE == MODE_NOTE)) then
         return
     end
     if MODE == MODE_DRUM or MODE == MODE_NOTE and not UI_MODE_PRESSED then
@@ -1866,7 +1889,26 @@ function ui_knob4(value)
         rns:track(rns.selected_track_index).color = hsv_to_rgb({ new_value / 256, 1.0, 1.0 })
         UI_PAD_PROCESSED = true
         mark_as_dirty()
-    elseif (MODE == MODE_PERFORM or MODE == MODE_OVERVIEW) and not UI_MODE_PRESSED then
+    elseif (MODE == MODE_PERFORM or MODE == MODE_OVERVIEW) and not UI_MODE_PRESSED and UI_ALT_PRESSED then
+        PERFORM_HIDE_CURSOR = true
+        local cell = rns:pattern(rns.selected_pattern_index):track(rns.selected_track_index)
+        local old_color
+        if cell.color == nil then
+            old_color = rgb_to_hsv(rns:track(rns.selected_track_index).color)
+        else
+            old_color = rgb_to_hsv(cell.color)
+        end
+
+        local old_value = 256 * old_color[1]
+        local new_value = old_value + value
+        if new_value < 0 then
+            new_value = new_value + 256
+        elseif new_value > 256 then
+            new_value = new_value - 256
+        end
+        cell.color = hsv_to_rgb({ new_value / 256, 1.0, 1.0 })
+        mark_as_dirty()
+    elseif (MODE == MODE_PERFORM or MODE == MODE_OVERVIEW) and not UI_MODE_PRESSED and not UI_ALT_PRESSED then
         local cell = rns:track(rns.selected_track_index)
         local old_color = rgb_to_hsv(cell.color)
 
@@ -2132,10 +2174,18 @@ function ui_update_state_buttons()
         midi_browse(COLOR_OFF)
     end
 
-    if UI_STEP_PRESSED then
-        midi_step(COLOR_YELLOW)
+    if MODE == MODE_PERFORM or MODE == MODE_OVERVIEW then
+        if ((UI_STEP_PRESSED and not UI_STEP_LOCK) or (not UI_STEP_PRESSED and UI_STEP_LOCK)) then
+            midi_step(COLOR_YELLOW)
+        else
+            midi_step(COLOR_OFF)
+        end
     else
-        midi_step(COLOR_OFF)
+        if UI_STEP_PRESSED then
+            midi_step(COLOR_YELLOW)
+        else
+            midi_step(COLOR_OFF)
+        end
     end
 
     if UI_SHIFT_PRESSED then
@@ -2368,7 +2418,7 @@ function build_debug_interface()
         height = 35,
         text = "STEP",
         pressed = function()
-            if UI_STEP_PRESSED then
+            if ((UI_STEP_PRESSED and not UI_STEP_LOCK) or (not UI_STEP_PRESSED and UI_STEP_LOCK)) then
                 ui_step_release()
             else
                 ui_step_press()
@@ -2902,9 +2952,9 @@ end
 
 function black(color)
     return {
-        math.min(255, color[1]+1),
-        math.min(255, color[2]+1),
-        math.min(255, color[3]+1)
+        math.min(255, color[1] + 1),
+        math.min(255, color[2] + 1),
+        math.min(255, color[3] + 1)
     }
 end
 
@@ -2977,6 +3027,7 @@ function midi_configure()
                 VB:text {
                     text = "Show development view if no device is connected"
                 }
+
             }
         },
     }
@@ -3002,6 +3053,5 @@ renoise.tool():add_menu_entry {
     end
 }
 
-
-initialize(true) 
+initialize(true)
 
